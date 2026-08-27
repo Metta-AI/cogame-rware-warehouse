@@ -1,0 +1,7 @@
+{
+  "swept": "tools/tune_baselines.nim --sweep",
+  "note": "The cooperative head-to-head sweep's pick: the fleet throughput of two courteous and two shuttle robots over three seeds. tests/test_rware_tuning.nim asserts the shipped DefaultBaselineParams still equal it, so a hand-edit of the defaults fails the build.",
+  "yieldAfter": 6,
+  "penalty": 4,
+  "stowClearance": 2
+}

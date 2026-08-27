@@ -1,0 +1,429 @@
+<style>
+/* --- the locker-room curtain never swallows a transport click ----------- */
+/* The inherited curtain covers the viewport at z-index 25 and only becomes
+   click-through when `.gone` lands, which is LOCKER_MIN_DWELL_MS (900 ms)
+   after the first frame -- so for the first ~900 ms every click on the
+   scrubber, the play button or a beat marker is eaten by a decorative scene.
+   The curtain has no interactive children in this fork -- backdrop, sprites
+   and a rotating caption -- so it is decoration and says so. The fade,
+   the dwell and every inherited rule are untouched. */
+#lockerroom { pointer-events: none; }
+
+/* --- scorebug: colour chip, delivered numeral, fallback glyph ----------- */
+/* The plate name must survive a 360px featured-match iframe: it grows into
+   whatever room the plate has and ellipsises only when it genuinely runs out,
+   never collapsing to a bare "..." . */
+.plate-name {
+  flex: 1 1 auto;
+  min-width: 3.2em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.plate .plate-alias {
+  font-family: var(--pixfont);
+  font-size: calc(9 * var(--u));
+  letter-spacing: 0.14em;
+  color: var(--paper-dim);
+  white-space: nowrap;
+  flex: none;
+}
+.plate .colour-chip {
+  width: calc(9 * var(--u));
+  height: calc(9 * var(--u));
+  border-radius: 50%;
+  flex: none;
+}
+.plate .deliv-label {
+  font-family: var(--finefont);
+  font-size: calc(8 * var(--u));
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--paper-dim);
+  flex: none;
+}
+.plate .deliv-num {
+  font-family: var(--pixfont);
+  font-size: calc(22 * var(--u));
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+.plate .fb-glyph {
+  font-family: var(--pixfont);
+  font-size: calc(11 * var(--u));
+  color: var(--amber);
+  flex: none;
+}
+/* 360 px rule 2: under `.tiny` each plate keeps only alias + name +
+   delivered, the colour chip shrinks to 6 px and the fallback glyph moves
+   inline. `.tiny` is toggled by relayout() at boardW < 640. */
+#stage.tiny .plate .deliv-label { display: none; }
+#stage.tiny .plate .colour-chip { width: 6px; height: 6px; }
+#stage.tiny .plate .fb-glyph {
+  font-size: calc(9 * var(--u));
+  margin-left: calc(-1 * var(--u));
+}
+
+/* --- the request rail and the jam chip, in the TOP band ----------------- */
+/* Neither is ever positioned inside the transport band: the board region is
+   laid out between the two bands and every addition here sits in the top band
+   or inside the board region. */
+#reqrail {
+  position: absolute;
+  /* Directly UNDER the scorebug band, never inside it and never inside the
+     transport band: --topband is the measured height relayout() reserves for
+     the scorebug, so the rail rides on the board's top aisle row (y = 0 is all
+     highway, so nothing the spectator needs is behind it). */
+  top: calc(var(--topband, 0px) + 4 * var(--u));
+  left: calc(6 * var(--u));
+  z-index: 6;
+  display: flex;
+  gap: calc(3 * var(--u));
+  pointer-events: none;
+  max-width: 92%;
+  overflow: hidden;
+}
+.req-chip {
+  font-family: var(--finefont);
+  font-size: calc(8 * var(--u));
+  letter-spacing: 0.08em;
+  color: var(--paper);
+  background: rgba(12, 9, 6, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(217, 164, 65, 0.65);
+  padding: calc(2 * var(--u)) calc(4 * var(--u));
+  white-space: nowrap;
+}
+.req-chip .req-at { color: var(--paper-dim); }
+.req-chip .req-by { color: var(--amber); }
+.req-chip.done {
+  color: #7ddc94;
+  text-decoration: line-through;
+  box-shadow: inset 0 0 0 1px rgba(125, 220, 148, 0.8);
+}
+/* 360 px rule 3: under `.tiny` the rail shows shelf ids only. */
+#stage.tiny .req-chip .req-at,
+#stage.tiny .req-chip .req-by { display: none; }
+
+#jamchip {
+  position: absolute;
+  top: calc(var(--topband, 0px) + 4 * var(--u));
+  right: calc(6 * var(--u));
+  z-index: 6;
+  font-family: var(--finefont);
+  font-size: calc(8 * var(--u));
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--red);
+  background: rgba(12, 9, 6, 0.72);
+  box-shadow: inset 0 0 0 1px currentColor;
+  padding: calc(3 * var(--u)) calc(6 * var(--u));
+  display: none;
+}
+#jamchip.on { display: block; }
+#stage.tiny #jamchip .jam-who { display: none; }
+
+/* --- scrubber beats: one rule per kind the sim emits, and no others ----- */
+/* Buttons, not divs: each carries a title + aria-label and seeks on click. */
+button.beat-marker {
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  appearance: none;
+  background: var(--paper-dim);
+}
+.beat-marker.delivery {
+  background: #7ddc94;
+  width: calc(3 * var(--u));
+  height: calc(10 * var(--u));
+}
+.beat-marker.jam {
+  background: var(--red);
+  width: calc(3 * var(--u));
+  height: calc(12 * var(--u));
+}
+.beat-marker.fallback {
+  background: var(--amber);
+  width: calc(2 * var(--u));
+  height: calc(7 * var(--u));
+  opacity: 0.9;
+}
+.beat-marker.end {
+  background: var(--paper);
+  width: calc(3 * var(--u));
+  height: calc(14 * var(--u));
+}
+
+/* --- endcard columns and the per-seat rows ------------------------------ */
+.ec-thead, .ec-trow {
+  display: grid;
+  grid-template-columns: 1.6fr 0.8fr 0.8fr 0.8fr 0.8fr;
+  gap: calc(4 * var(--u));
+  font-size: calc(9 * var(--u));
+}
+.ec-thead {
+  color: var(--paper-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-top: calc(4 * var(--u));
+}
+.ec-trow { font-variant-numeric: tabular-nums; }
+.ec-tname {
+  font-family: var(--pixfont);
+  font-size: calc(14 * var(--u));
+  letter-spacing: 0.1em;
+}
+.ec-tfoot {
+  display: flex;
+  align-items: baseline;
+  gap: calc(6 * var(--u));
+  margin-top: calc(4 * var(--u));
+}
+.ec-tfoot .fl-cap {
+  font-size: calc(8 * var(--u));
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--paper-dim);
+}
+.ec-tfoot .fl-num {
+  font-family: var(--pixfont);
+  font-size: calc(18 * var(--u));
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- feed rows ---------------------------------------------------------- */
+.feed-row .rw-order { color: var(--amber); }
+.feed-row .rw-say { color: var(--paper); font-style: italic; }
+</style>
+<script>
+(function () {
+  'use strict';
+  // Every name here carries an rw-/warehouse- prefix ON PURPOSE. The page's
+  // chrome alias block declares the shared beat builder with a hoisted
+  // `var markBeat`, so a game-block function of that same name would be
+  // silently swallowed by it and the scrubber would end up with unlabelled div
+  // markers that never seek (cogame-tandem, 2026-08-23).
+  // tests/test_rware_viewer.nim asserts the whole alias list is untouched
+  // below this banner.
+  var CTX = null;
+  var placed = {};          // "tick|kind|side" -> true (dedup)
+  var rwMarkers = [];       // this block's marker buttons (the spoiler gate)
+  var beatsPlaced = false;
+  var railBuilt = '';
+
+  function rwId(id) { return document.getElementById(id); }
+
+  function scrubGeometry(s) {
+    var st = Math.max(0, s.st || 0);
+    var mx = Math.max(st + 1, s.mx || 1);
+    return { st: st, span: mx - st };
+  }
+
+  // warehouseBeat -- NEVER markBeat. Appends a LABELLED, CLICKABLE button to
+  // #scrub that seeks on click.
+  function warehouseBeat(s, tick, kind, side, label) {
+    var key = tick + '|' + kind + '|' + (side || '');
+    if (placed[key]) return;
+    placed[key] = true;
+    var scrub = rwId('scrub');
+    if (!scrub) return;
+    var g = scrubGeometry(s);
+    var el = document.createElement('button');
+    el.type = 'button';
+    el.className = 'beat-marker ' + kind;
+    el.style.left =
+      (Math.min(1, Math.max(0, (tick - g.st) / g.span)) * 100) + '%';
+    el.title = label + ' \u2014 click to jump here';
+    el.setAttribute('aria-label', label);
+    el.__tick = tick;
+    el.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      CTX.send('s:' + tick);
+    });
+    scrub.appendChild(el);
+    rwMarkers.push(el);
+  }
+
+  // [spoilers] gate for THIS block's markers. The shared chrome walks only its
+  // own marker list, so with spoilers off its markers hide and these four
+  // kinds would still sit on the scrubber ahead of the playhead -- while the
+  // retitled #btn-spoilers tooltip promises "deliveries / jams / result on the
+  // timeline ahead of the playhead".
+  function rwSpoilerGate(s) {
+    if (!s || !CTX || !CTX.C || !CTX.C.getSpoilers) return;
+    var spoilers = CTX.C.getSpoilers();
+    for (var i = 0; i < rwMarkers.length; i++) {
+      var el = rwMarkers[i];
+      var hide = !spoilers && el.__tick > s.t;
+      if (el.__hidden !== hide) {
+        el.__hidden = hide;
+        el.style.display = hide ? 'none' : '';
+      }
+    }
+  }
+
+  function feedRow(html, cls) {
+    var row = document.createElement('div');
+    row.className = 'feed-row' + (cls ? ' ' + cls : '');
+    row.innerHTML = html;
+    CTX.pushFeed(row);
+  }
+
+  function aliasOf(s, slot) {
+    var seats = (s.rw && s.rw.seats) || [];
+    return (seats[slot] && seats[slot].alias) || ('SEAT ' + slot);
+  }
+
+  function titleAlias(s, slot) {
+    var a = aliasOf(s, slot);
+    return a.charAt(0) + a.slice(1).toLowerCase();
+  }
+
+  // --- the request rail, in the TOP band ----------------------------------
+  function ensureRail() {
+    if (rwId('reqrail')) return;
+    var chrome = rwId('chrome');
+    if (!chrome) return;
+    var rail = document.createElement('div');
+    rail.id = 'reqrail';
+    rail.setAttribute('aria-label', 'Requested shelves');
+    chrome.appendChild(rail);
+    var jam = document.createElement('div');
+    jam.id = 'jamchip';
+    jam.setAttribute('aria-label', 'Aisle jam');
+    chrome.appendChild(jam);
+  }
+
+  function renderRail(s) {
+    var rail = rwId('reqrail');
+    if (!rail) return;
+    var requests = (s.rw && s.rw.requests) || [];
+    var key = JSON.stringify(requests);
+    if (key === railBuilt) return;
+    railBuilt = key;
+    var html = '';
+    for (var i = 0; i < requests.length; i++) {
+      var r = requests[i];
+      html += '<span class="req-chip"><b>' + CTX.esc(r.id) + '</b>' +
+        '<span class="req-at"> ' + r.x + ',' + r.y + '</span>' +
+        (r.by >= 0
+          ? '<span class="req-by"> \u2192 ' + CTX.esc(aliasOf(s, r.by)) +
+            '</span>'
+          : '') +
+        '</span>';
+    }
+    rail.innerHTML = html;
+  }
+
+  function renderJamChip(s) {
+    var chip = rwId('jamchip');
+    if (!chip) return;
+    var jam = (s.rw && s.rw.jam) || null;
+    if (!jam || !jam.on) { chip.classList.remove('on'); return; }
+    var who = [];
+    for (var i = 0; i < (jam.slots || []).length; i++) {
+      who.push(aliasOf(s, jam.slots[i]));
+    }
+    chip.innerHTML = 'JAM <span class="jam-who">' + CTX.esc(who.join(' \u00b7 ')) +
+      '</span> ' + jam.ticks + 't';
+    chip.classList.add('on');
+  }
+
+  // Plain language, never internal notation.
+  function rwEvent(event, s) {
+    switch (event.k) {
+      case 'order':
+        feedRow('<span class="rw-order">' + CTX.esc(aliasOf(s, event.slot)) +
+          ' \u2192 ' + CTX.esc(event.verb) +
+          (event.arg ? ' ' + CTX.esc(event.arg) : '') + '</span>');
+        return true;
+      case 'say':
+        feedRow('<span class="rw-say">' + CTX.esc(titleAlias(s, event.slot)) +
+          ': \u201c' + CTX.esc(event.text) + '\u201d</span>');
+        return true;
+      case 'load':
+        feedRow(CTX.esc(aliasOf(s, event.slot)) + ' lifts ' +
+          CTX.esc(event.shelf) + ' at (' + event.cell[0] + ',' +
+          event.cell[1] + ')');
+        return true;
+      case 'deliver':
+        feedRow('<b>' + CTX.esc(aliasOf(s, event.slot)) + ' delivers ' +
+          CTX.esc(event.shelf) + ' to ' + CTX.esc(event.station) +
+          ' \u2014 ' + event.total + ' delivered</b>');
+        CTX.beatPulse();
+        return true;
+      case 'stow':
+        feedRow(CTX.esc(aliasOf(s, event.slot)) + ' stows ' +
+          CTX.esc(event.shelf) + ' at (' + event.cell[0] + ',' +
+          event.cell[1] + ')');
+        return true;
+      case 'jam':
+        var who = [];
+        for (var i = 0; i < (event.slots || []).length; i++) {
+          who.push(aliasOf(s, event.slots[i]));
+        }
+        feedRow('<b>JAM \u2014 ' + CTX.esc(who.join(' \u00b7 ')) + '</b>');
+        CTX.banner('JAM \u2014 ' + who.join(' \u00b7 ') + ', ' +
+          ((s.rw.jam && s.rw.jam.ticks) || 0) + ' TICKS', 'jam');
+        CTX.beatPulse();
+        return true;
+      case 'jamclear':
+        feedRow('<b>JAM CLEARED AFTER ' + event.ticks + ' TICKS</b>');
+        CTX.banner('JAM CLEARED AFTER ' + event.ticks + ' TICKS', 'jamclear');
+        return true;
+      case 'fallback':
+        feedRow(CTX.esc(aliasOf(s, event.slot)) +
+          ' MISSED THE CALL \u2014 scripted order (' +
+          CTX.esc(event.cause) + ')');
+        warehouseBeat(s, s.t, 'fallback', '',
+          aliasOf(s, event.slot) + ' fell back to a scripted order');
+        return true;
+      case 'end':
+      case 'turn':
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  // The pre-scanned beat timeline arrives once, on the first frame, so every
+  // marker is on the scrubber at full width before playback reaches it.
+  function placeBeats(s) {
+    if (beatsPlaced || !s.beats) return;
+    beatsPlaced = true;
+    for (var i = 0; i < s.beats.length; i++) {
+      var b = s.beats[i];
+      warehouseBeat(s, b.t, b.k, b.side || '', b.label || b.k);
+    }
+  }
+
+  function frame(s, ctx, jumped) {
+    CTX = ctx;
+    ensureRail();
+    // `placed` is NOT cleared on a backward jump. A marker is a permanent
+    // annotation of the timeline, and the buttons already on #scrub are not
+    // removed by a seek.
+    placeBeats(s);
+    renderRail(s);
+    renderJamChip(s);
+    var events = (s.rw && s.rw.events) || [];
+    for (var i = 0; i < events.length; i++) rwEvent(events[i], s);
+    rwSpoilerGate(s);
+  }
+
+  window.RwareChrome = {
+    install: function (ctx) {
+      CTX = ctx;
+      ensureRail();
+      var spoilerBtn = rwId('btn-spoilers');
+      if (spoilerBtn) {
+        spoilerBtn.addEventListener('click', function () {
+          rwSpoilerGate(CTX && CTX.getState ? CTX.getState() : null);
+        });
+      }
+    },
+    frame: frame,
+    warehouseBeat: warehouseBeat,
+    applySpoilers: rwSpoilerGate
+  };
+})();
+</script>

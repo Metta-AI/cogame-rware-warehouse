@@ -1,0 +1,31 @@
+[
+  {
+    "name": "rware-warehouse-picker",
+    "run": "/bin/rware-warehouse-player",
+    "env": {
+      "PLAYER_PROMPT": "Work the shelf that nobody else has claimed. On turn 1, read the request board, pick the\nrequested shelf whose home cell is CLOSEST to you, and say exactly which one you are taking\nand which column you will use to come back down - e.g. \"taking S12, returning down column 6\".\nThen never change your mind unless the radio tells you someone else already has it.\nBefore you commit to a shelf, read the radio: if another robot claimed it, take the next\nnearest UNCLAIMED one instead and say so.\nLoaded, go straight to a workstation and pick the one nobody has claimed on the radio; say\nwhich one you took. The instant you are credited, stow: use \"stow\" with no coordinates so\nthe pilot picks the nearest empty slot, and get off the queue lane below the shelf blocks -\nthat lane is where every delivery jams.\nIf your observation says blocked_ticks_last_turn is 8 or more, or the jam flag names you,\nissue \"yield\" for exactly one turn, say \"yielding, come through\", and then resume the order\nyou were on. Never issue \"yield\" twice in a row: two robots that both yield forever deliver\nnothing.\nIf your last_order_result is shelf_gone, immediately fetch the nearest other requested shelf.\nIf it is no_free_slot, stow with explicit coordinates on a slot you saw earlier."
+    }
+  },
+  {
+    "name": "rware-warehouse-router",
+    "run": "/bin/rware-warehouse-player",
+    "env": {
+      "PLAYER_PROMPT": "Run a lane discipline and hold it. Decide once, on turn 1, from your starting cell: if your\nx is left of the workstations you are a LEFT-SIDE robot, otherwise a RIGHT-SIDE robot. Say\nwhich you are. Only ever fetch requested shelves whose home cell is on your side, and only\never deliver to the workstation on your side (left -> W1, right -> W2). Say your side and\nyour station on turn 1 and repeat it whenever the radio shows someone drifting into it.\nWithin your side, always take the requested shelf with the SMALLEST y (highest up the\nboard) first, so loaded robots come down the aisles and empty robots go up under the\nshelves - the two flows never meet head-on in the same lane.\nStow every delivered shelf on the FIRST empty slot on your own side, using explicit x,y from\nthe free_slots list, and prefer a slot high up rather than one next to the workstation lane.\nIf the jam flag names you and the other jammed robot is on your side, \"hold\" and say\n\"holding, you go\"; if it is not on your side, \"yield\" and say which lane you are freeing.\nOnly one of you should move: use your alias order (Alpha, Bravo, Charlie, Delta) - the\nearlier alias holds, the later one yields.\nIf there are no requested shelves on your side at all, and only then, cross over, say\n\"crossing to the other side\", and work the nearest requested shelf."
+    },
+    "player": "ply_bac48eb1-662e-44f8-973d-f3e016dccf5d"
+  },
+  {
+    "name": "rware-warehouse-shuttle",
+    "run": "/bin/rware-warehouse-player",
+    "env": {
+      "PLAYER_SCRIPTED": "shuttle"
+    }
+  },
+  {
+    "name": "rware-warehouse-courteous",
+    "run": "/bin/rware-warehouse-player",
+    "env": {
+      "PLAYER_SCRIPTED": "courteous"
+    }
+  }
+]

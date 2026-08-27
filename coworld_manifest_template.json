@@ -1,0 +1,595 @@
+{
+  "$schema": "https://softmax.com/schemas/coworld-manifest-v1.json",
+  "tags": [
+    "rware",
+    "warehouse",
+    "cooperative",
+    "logistics",
+    "port"
+  ],
+  "episode_timeout_minutes": 20,
+  "game": {
+    "name": "rware-warehouse",
+    "owner": "daveey@softmax.com",
+    "description": "A port of semitable/robotic-warehouse (RWARE). Four robots share a small warehouse whose aisles are one cell wide: drive under a requested shelf, lift it, carry it to a workstation, then stow it again -- a loaded robot cannot pass under another standing shelf. Fully cooperative: the league reads the number of shelves the FLEET delivered, and the only way to lose it is to jam the aisles. Every seat is one robot driven by one JSON order every 20 ticks, and the only channel between the drivers is a 120-rune radio call.",
+    "replay_viewer": {
+      "bundle": "static-replay-viewer"
+    },
+    "runnable": {
+      "type": "game",
+      "image": "{{RWARE_WAREHOUSE_IMAGE}}",
+      "run": [
+        "/bin/rware-warehouse"
+      ],
+      "env": {
+        "ANTHROPIC_API_KEY_URI": "secret://coworld/rware-warehouse/anthropic_api_key"
+      }
+    },
+    "protocols": {
+      "player": {
+        "type": "uri",
+        "value": "https://github.com/Metta-AI/cogame-rware-warehouse/blob/main/docs/PROTOCOL.md"
+      },
+      "global": {
+        "type": "uri",
+        "value": "https://github.com/Metta-AI/cogame-rware-warehouse/blob/main/docs/PROTOCOL.md"
+      }
+    },
+    "docs": {
+      "readme": {
+        "type": "text",
+        "value": "# cogame-rware-warehouse\n\n**A port of [`semitable/robotic-warehouse`](https://github.com/semitable/robotic-warehouse)\n(RWARE) to a Coworld, with four ROBOT DRIVERS instead of four per-tick RL policies.**\n\nFour robots share a small warehouse. Shelves stand in blocks; the aisles between\nthem are one cell wide. Two workstations sit at the bottom of the middle lane. A\nstation board shows the requested shelves, and a robot must drive to a requested\nshelf, drive **under** it, lift it, carry it to a workstation, and then carry it\nback to an empty storage slot and put it down — because a loaded robot cannot\npass under another standing shelf and cannot pick anything else up until it has\nstowed what it holds.\n\n**Nobody scores alone.** The number the league reads is the number of shelves the\n*fleet* delivered, and the only way to lose it is to jam the aisles.\n\n## A policy is just a prompt\n\nA seat is an LLM if it sets `PLAYER_PROMPT`, and a scripted baseline if it sets\n`PLAYER_SCRIPTED=shuttle|courteous`. Both come out of the same image, and the\ngame server — not the player container — makes every model call.\n\nEvery 20 ticks each driver is handed its robot's view of the warehouse and\nanswers with one JSON order:\n\n```json\n{\"verb\": \"fetch\", \"shelf\": \"S12\", \"say\": \"taking S12, keep column 7 clear\",\n \"notes\": \"then stow at (2,7)\"}\n```\n\n`fetch` · `deliver` · `stow` · `yield` · `hold` — five orders, and a\ndeterministic pilot drives the robot until the order finishes or the driver\nchanges it. `say` is a fleet radio call every other robot hears next turn; it is\nthe only channel through which intentions travel, and it is what makes ad-hoc\ncoordination in a one-wide corridor a real problem.\n\n## What makes it hard\n\nYou drive **one** robot and you cannot control the other three. Two robots that\nmeet head-on in a one-wide aisle both stay put — forever — until one of them\nyields. A line of robots *can* move together if the one in front has somewhere to\ngo. The workstation queue lane is where every delivery jams, and a fleet that\ndeadlocks there plays out its 500 ticks with the jam flag lit and scores zero.\n\n## Scoring\n\n```\ndelivered[s]   = requested shelves delivered by seat s's robot\nteamDelivered  = sum over s of delivered[s]\nscores[s]      = 100 * teamDelivered + delivered[s]\n```\n\nHigher is better; no term is ever negative. The first term is identical for all\nfour seats — pure common interest. The second exists only so the ladder is not a\ndraw machine, and it is deliberately an epsilon: a full round trip takes at least\n12 ticks, so `delivered[s] < 100` always and the ordering is strictly\nlexicographic — **team throughput first, own deliveries only as a tie-break**.\n\n`results.win[s]` is `teamDelivered >= parDeliveries`, the same boolean for all\nfour seats, and `results.winner` is always `null`: a cooperative episode has no\nwinner.\n\n## Two name spaces\n\nIn-game the seats are **Alpha, Bravo, Charlie and Delta**. Those aliases are the\nonly names that appear in an observation, a prompt, an order, a radio line or a\nsprite label, so a driver can never learn who it is working with. The seats' real\npolicy names live only in `results.names`, in the replay's join records and in\nthe viewer's scorebug.\n\n## Watching\n\nReplays are a **static wasm bundle**, never a pod: the same Nim sim module the\nserver runs is compiled to WebAssembly and re-derives every frame in the browser\nfrom the recorded orders, checking a per-tick hash as it goes. The viewer draws\nthe whole warehouse edge to edge with the request rail in the top band, the\ndelivered counter in the clock, a labelled jam chip, a deliveries sparkline with\nthe jam spans shaded behind it, and clickable beat markers for every delivery,\njam, fallback and the end.\n\n## Layout\n\n| path | what |\n| --- | --- |\n| `src/rware/` | the sim, the server, the decision layer and the replay codec |\n| `src/rware_warehouse.nim` | the game server entrypoint |\n| `src/rware_warehouse_player.nim` | the thin seat registrar |\n| `replay-viewer/` | the wasm entry, the emscripten config and the static shell |\n| `client/` | the broadcast chrome and the board renderer |\n| `vendor/upstream/` | byte-pristine `rware/warehouse.py` and `rware/__init__.py` |\n| `tools/` | the build hooks, the replay forensics and the tuning sweep |\n| `docs/RULES.md` | the rules in full |\n| `docs/PORTING-RWARE.md` | what was ported, what diverged and why |\n\n## Building\n\n```bash\nnim c -d:release --path:src -o:rware-warehouse src/rware_warehouse.nim\nnim c -r --path:src tests/tests.nim          # the whole suite\ndocker build -t coworld-rware-warehouse:latest .\n./tools/build_replay_viewer.sh \"$PWD/dist/static-replay-viewer\"\n```\n\nMIT licensed. The vendored upstream sources keep their own licence in\n`vendor/LICENSE-rware`.\n"
+      },
+      "pages": [
+        {
+          "id": "rules.md",
+          "title": "Rules",
+          "content": {
+            "type": "text",
+            "value": "# Rules — cogame-rware-warehouse\n\nFour robots, one warehouse, one number: how many requested shelves the fleet\ndelivered.\n\n## The board\n\nA `width x height` integer grid generated by upstream's own formula:\n\n```\nheight = (columnHeight + 1) * shelfRows + 2\nwidth  = 3 * shelfColumns + 1          (shelfColumns must be odd)\n```\n\nTwo shapes ship:\n\n| variant | shelfColumns | grid | shelves | workstations |\n| --- | --- | --- | --- | --- |\n| `warehouse` | 3 | 10 x 11 | 32 | (4,10) and (5,10) |\n| `wide-hard` | 5 | 16 x 11 | 64 | (7,10) and (8,10) |\n\nA cell is an **aisle** (a \"highway\") when any of upstream's four clauses holds:\n\n* `x % 3 == 0` — the vertical highways\n* `y % (columnHeight + 1) == 0` — the horizontal highways\n* `y == height - 1` — the delivery row\n* `y > height - (columnHeight + 3)` and `x` is one of `width//2 - 1`,\n  `width//2` — the workstation queue lane\n\nEvery other cell is a **storage slot**, and at reset every storage slot holds a\nstanding shelf. Shelf ids `S01…` are assigned in scan order — ascending `y`,\nthen ascending `x` — which is exactly the order upstream builds its shelf list\nin. The two workstations are `W1` (left) and `W2` (right).\n\nCells are `(x, y)`, `x` rightwards from 0 and `y` downwards from 0.\n\n## The clock\n\n* **Tick** = one RWARE `step`. `maxTicks = 500`, upstream's own `max_steps`.\n* **Command turn** = one order round, every `turnTicks = 20` ticks, beginning\n  with turn 1 at tick 0 before any stepping. **25 command turns per episode.**\n* One game per episode: the game is cooperative, so there is no side to swap.\n\n## One tick, in order\n\n1. `tick += 1`. Snapshot the two occupancy layers (robots, **standing** shelves).\n   Every rule below reads the snapshot, never a partially updated world.\n2. **Choose one action per robot**, in ascending slot, from that seat's current\n   order via the pilot. The action is one of `NOOP`, `FORWARD`, `LEFT`, `RIGHT`,\n   `TOGGLE_LOAD` — upstream's `Discrete(5)`.\n3. **Veto impossible loaded moves.** For each robot requesting `FORWARD` while\n   carrying: if the target cell is on the board and holds a standing shelf, and\n   the target does **not** hold a robot that is itself carrying, the action\n   becomes `NOOP`.\n4. **Build the move graph and commit movers.** Nodes are cells; each robot\n   contributes one edge from its own cell to its requested target (a self-edge\n   when it is not requesting `FORWARD`, or when the target would leave the board\n   — upstream clamps the target, which makes a wall bump a self-edge). Per\n   weakly-connected component:\n   * if the component contains a directed cycle: a cycle of length **2** (a\n     head-on swap) moves **nobody**; any longer cycle — a self-edge is a\n     length-1 cycle — moves every robot standing on a node of that cycle and\n     nothing else;\n   * otherwise the component is a DAG: every robot on its **longest directed\n     path** moves. This is what lets a queue of robots step forward together\n     behind one that has somewhere to go.\n\n   Ties are pinned: cells are ordered by index `y*W + x`, the cycle search\n   starts from the lowest-indexed node of the component, and the longest path is\n   broken toward the path whose start node has the lowest index.\n5. **Apply**, ascending slot. A committed `FORWARD` moves the robot one cell in\n   its facing and its carried shelf with it. `LEFT`/`RIGHT` rotate 90 degrees\n   through `[UP, RIGHT, DOWN, LEFT]`. `TOGGLE_LOAD` while empty lifts the\n   standing shelf on the robot's own cell if there is one; while carrying it\n   puts the shelf down **only if the robot's cell is not an aisle** (on an aisle\n   it does nothing). `NOOP` does nothing.\n6. **Rebuild the occupancy layers.**\n7. **Deliveries**, `W1` then `W2`: a shelf on the pad **and** on the request\n   board is delivered. `delivered[slot] += 1` for the robot standing there,\n   `teamDelivered += 1`, and that queue entry is refilled with a shelf drawn by\n   the request RNG from the shelves not currently requested. The delivered shelf\n   stays on the robot's forks; it must still be stowed.\n8. **Jam detection.** `stuck[slot] += 1` for every robot that requested\n   `FORWARD` and did not move, else `stuck[slot] = 0`. A **jam** is the set of\n   robots with `stuck >= jamTicks (8)` linked by the blocking relation (A's\n   target cell is occupied by B), closed transitively, with at least two\n   members.\n9. Mix the tick into `gameHash` and append it to the replay's hash chain.\n10. Evaluate the end conditions.\n\n## Orders\n\nOne order per seat per turn. A deterministic pilot executes it until it finishes\nor the driver changes it.\n\n| order | goal cell | terminal action | finishes with |\n| --- | --- | --- | --- |\n| `fetch S` | `S`'s standing cell (its home until someone stows it elsewhere) | `TOGGLE_LOAD` on arrival | `done` when loaded; `shelf_gone` if the cell holds no shelf; `already_loaded` if issued while carrying; `no_path` if BFS fails |\n| `deliver W` | that workstation cell | none — the engine credits the delivery | `done` on credit; `not_loaded` if issued while empty; `no_path` if BFS fails |\n| `stow [x y]` | the named storage cell, else the nearest seen-empty one | `TOGGLE_LOAD` on arrival | `done` when unloaded; `no_free_slot` if none is known; `not_loaded` if issued while empty |\n| `yield` | the nearest aisle junction outside the queue lane, reachable **around** the other robots | none | `done` on arrival, then holds |\n| `hold` | — | `NOOP` every tick | never finishes |\n\nPath planning is a 4-connected BFS over the robot's *believed* grid: every cell\nfor an empty robot; for a loaded robot only aisle cells, the destination and the\nstorage cells that robot has **seen** to be empty this episode. Neighbours are\nexpanded up, right, down, left, so the path is unique. Other robots are not\nobstacles in the plan — they move — except for `yield`, whose whole purpose is to\nget out of their way.\n\nAn idle robot executes the fixed **park rule**: drive to the nearest aisle cell\nthat is not in the workstation queue lane and not already held, and stand there.\n\n## What a driver sees\n\nPublic and static: the whole floor plan, and the request board with each shelf's\nhome cell. Everything dynamic is limited to Chebyshev `sensorRange = 3` of the\nseat's own robot — other robots, which slots are free, who is carrying what.\nHidden entirely: every other seat's order and notes, every other seat's real\nplayer name and policy kind, the request RNG's future draws.\n\nEvery seat also hears every seat's previous-turn `say` on the fleet radio.\n\n## Reply schema\n\n| field | cap / domain |\n| --- | --- |\n| `verb` | <= 8 runes; `fetch` \\| `deliver` \\| `stow` \\| `yield` \\| `hold` |\n| `shelf` | required iff `verb == \"fetch\"`; <= 4 runes; must be on the request board |\n| `station` | optional for `deliver`; <= 2 runes; `W1` \\| `W2` |\n| `x`, `y` | optional for `stow`; clamped into the board |\n| `say` | <= 120 runes — the fleet radio |\n| `notes` | <= 240 runes — private, echoed back next turn |\n| whole reply | <= 4096 bytes read before parsing |\n\nA reply with a valid `say` but no `verb` is **usable**: the seat keeps its\ncurrent order and the radio line is delivered. An order whose verb is valid but\nwhose required argument is missing or unknown is **repaired to the seat's\nprevious order**, counted in `ordersRejected`, never dropped into \"unactuated\".\n\n## Scoring and ending\n\n```\nscores[s] = 100 * teamDelivered + delivered[s]\nwin[s]    = teamDelivered >= parDeliveries        (the same for all four seats)\nwinner    = null                                  (a cooperative episode has none)\n```\n\nThe episode ends at the tick cap (`complete`), at the wall-clock stop\n(`deadline`, settled with the real deliveries so far), or on a caught exception\n(`fault`). There is no early win, no early loss and **no inactivity termination**\n— ending a jammed episode early would hide the very failure the game is about.\n\n## Scripted baselines\n\n**`shuttle`** — pure greed, no jam handling. Carrying a delivered shelf, stow it;\ncarrying a requested shelf, deliver to the nearer workstation; empty, fetch the\nrequested shelf with the shortest path.\n\n**`courteous`** — the published default and the server-side fallback. Yields when\nit has been blocked and a lower-slot robot is blocked too (so exactly one robot\nin a pair backs off), stows clear of the queue lane, delivers to the less\ncrowded workstation, and penalises a shelf another robot is already closer to.\n"
+          }
+        },
+        {
+          "id": "porting.md",
+          "title": "Porting RWARE",
+          "content": {
+            "type": "text",
+            "value": "# Porting RWARE\n\nThe rules this Coworld plays are\n[`semitable/robotic-warehouse`](https://github.com/semitable/robotic-warehouse)'s\n`rware/warehouse.py` and `rware/__init__.py`, transcribed into Nim. This page is\nwhat was ported, how the port is proven, and every place it deliberately\ndiverges.\n\n## The pin\n\n`vendor/upstream/warehouse.py` and `vendor/upstream/__init__.py` are\n**byte-pristine** copies at a pinned commit, never edited. `vendor/UPSTREAM.md`\nrecords the repo, the commit hash, the fetch URL and each file's sha256, and\n`vendor/LICENSE-rware` carries the upstream licence.\n\n`src/rware/upstream.nim` is the ONE place an upstream number is written down,\neach constant beside the line it was read from.\n\n## The three fidelity gates\n\n1. **`tests/test_rware_upstream.nim`** — the tripwire. It regex-parses the\n   vendored files and asserts byte-equality against every constant in\n   `upstream.nim`: the two grid-size formulas, the four `highway_func` clauses,\n   the goal-cell formula, the action enum and its integer values, the direction\n   wrap list, `column_height = 8`, the size table\n   `{tiny (1,3), small (2,3), medium (2,5), large (3,5)}`, the difficulty table\n   `{easy 2, normal 1, hard 0.5}`, `max_steps = 500`, `sensor_range = 1`,\n   `msg_bits = 0` and `request_queue_size = int(agents * d)`. A re-vendor that\n   changes a number FAILS THE TESTS instead of silently desyncing the game.\n2. **`tests/test_rware_layout.nim`** — a direct transcription of upstream's\n   layout loop is run for `(rows, cols)` in `{(1,3), (2,3), (2,5), (3,5),\n   (1,5)}` and asserted equal, cell for cell, to `warehouse.nim`'s generator;\n   `(1,3)` is asserted to yield exactly 10x11, 32 shelves and goals (4,10) and\n   (5,10), `(1,5)` exactly 16x11, 64 shelves and goals (7,10) and (8,10); and\n   every vertical aisle is asserted to be exactly one cell wide.\n3. **`tests/test_rware_determinism.nim`** — the episode is re-derived from the\n   replay's seed and order records alone, on a fresh sim, and every per-tick\n   `gameHash` must match. The same chain runs in the browser: the wasm viewer\n   compiles the SAME `src/rware/sim.nim` and checks the hash at every tick.\n\n## Documented divergences\n\n1. **Deterministic collision tie-breaks.** Upstream delegates the cycle search\n   and the longest path to networkx, whose choice among several cycles or\n   several longest paths is implementation-defined. The port pins both: cells\n   are ordered by index `y*W + x`, the cycle search starts from the\n   lowest-indexed node of the component and visits successors in ascending index\n   order, and the DAG longest path is broken toward the path whose start node\n   has the lowest index. Required for a re-derivable replay; the *rules* —\n   2-cycles fail, longer cycles rotate, DAG longest path advances — are\n   upstream's exactly.\n2. **Who chooses the action changed, not what the actions are.** Per-tick RL\n   policies are replaced by five high-level orders under a deterministic pilot.\n   The five-action space, the direction wrap list, the loaded-move veto, the\n   load/unload rules, the delivery rule and the request refill are upstream's.\n3. **`sensor_range` 1 -> 3.** A seat plans 20 ticks ahead and a 3x3 window\n   cannot see a corridor conflict forming.\n4. **Scoring is `100 x GLOBAL + INDIVIDUAL`** rather than upstream's registered\n   `INDIVIDUAL`. The game is fully cooperative and the league needs a rankable\n   per-seat integer. Both upstream quantities are recorded in `results`\n   (`teamDelivered`, `delivered[]`).\n5. **`max_inactivity_steps` disabled.** Upstream's optional inactivity\n   termination is off, so a jam is watched rather than hidden.\n6. **The request board shows home cells.** Upstream marks requested shelves only\n   inside the sensor window; a dispatcher that cannot be told where a shelf\n   lives cannot issue `fetch`. Home cells are static warehouse knowledge;\n   *dynamic* facts (who is carrying what, which slots are free) stay\n   radius-limited.\n7. **One game per episode.** The starter's multi-game side swap is not used: a\n   cooperative game has no side to swap.\n8. **The `courteous` fetch cost adds its contention penalty.** The design note\n   writes the choice as minimising `path - contentionPenalty`; minimising that\n   would PREFER a shelf another robot is already closer to, which is the\n   opposite of the rule the same paragraph describes. The port adds the penalty.\n9. **`courteous` has a release valve.** The note's yield rule fires when a\n   visible robot with a LOWER slot index is also blocked, so exactly one robot\n   in any pair backs off. The lower-slot robot in a standoff may be a `shuttle`,\n   which never yields, and then nobody does and the aisle is dead for the rest\n   of the episode. A robot blocked for twice `yieldAfter` therefore yields\n   whatever its slot — late enough that the slot tie-break still decides every\n   ordinary pair.\n10. **`yield` plans with the other robots as obstacles.** Everywhere else the\n    pilot ignores them on purpose (RWARE's chain rule lets a queue advance\n    behind a mover), but the shortest route to the nearest junction is very\n    often straight through the robot that is blocking you, which would turn the\n    release valve into part of the deadlock.\n11. **Two integer RNG streams, not numpy.** `setupRng` draws the spawn cells,\n    the facings and the opening request board; `requestRng`'s k-th draw is a\n    pure function of `(seed, k)` where `k` is the number of deliveries so far,\n    so which shelf is requested next cannot be steered by which seat delivered.\n    That is the idea's \"request stream seeded\" integrity pin, and\n    `tests/test_rware_requests.nim` asserts it by replaying the same seed with\n    different seat behaviour and comparing the two request sequences.\n\n## Not ported\n\nThe flattened `(1 + 2*sensor_range)^2` observation vector, `msg_bits`\ncommunication (the radio replaces it), the image observation modes, the\n`TWO_STAGE` and `GLOBAL` reward modes as the *score* (both quantities are still\nrecorded), the `small`/`medium`/`large` layouts as shipped variants (the\ngenerator and the layout test already cover them; they letterbox to 10 px per\ncell in a 360 px embed, where a robot's facing stops reading), seat counts other\nthan 4, and Jumanji's JAX reimplementation — a cross-check reference in\n`vendor/UPSTREAM.md`, not a second set of rules.\n"
+          }
+        }
+      ]
+    },
+    "config_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tokens",
+        "players"
+      ],
+      "properties": {
+        "tokens": {
+          "type": "array",
+          "description": "Per-seat join tokens. RUNNER-INJECTED: the platform supplies these, so no game_config in this manifest carries a literal tokens array.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "players": {
+          "type": "array",
+          "description": "One entry per seat, in slot order.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "slots": {
+          "type": "array",
+          "description": "Optional per-slot team/token overrides.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "team": {
+                "type": "string"
+              },
+              "token": {
+                "type": "string"
+              }
+            }
+          },
+          "minItems": 0,
+          "maxItems": 4
+        },
+        "seed": {
+          "type": "integer",
+          "description": "Episode seed. Randomised by the game when absent."
+        },
+        "shelfColumns": {
+          "type": "integer",
+          "enum": [
+            3,
+            5
+          ],
+          "default": 3,
+          "description": "Upstream shelf_columns; the grid is 3*shelfColumns+1 wide."
+        },
+        "shelfRows": {
+          "type": "integer",
+          "enum": [
+            1
+          ],
+          "default": 1,
+          "description": "Upstream shelf_rows; v1 ships the 11-tall shapes only."
+        },
+        "columnHeight": {
+          "type": "integer",
+          "description": "Upstream column_height.",
+          "default": 8,
+          "minimum": 2,
+          "maximum": 12
+        },
+        "requestQueue": {
+          "type": "integer",
+          "description": "How many shelves are requested at once.",
+          "default": 4,
+          "minimum": 1,
+          "maximum": 64
+        },
+        "parDeliveries": {
+          "type": "integer",
+          "description": "The fleet's target; results.win is teamDelivered >= this.",
+          "default": 8,
+          "minimum": 0,
+          "maximum": 500
+        },
+        "maxTicks": {
+          "type": "integer",
+          "description": "Upstream max_steps.",
+          "default": 500,
+          "minimum": 1,
+          "maximum": 500
+        },
+        "turnTicks": {
+          "type": "integer",
+          "description": "Ticks between command turns.",
+          "default": 20,
+          "minimum": 1,
+          "maximum": 500
+        },
+        "sensorRange": {
+          "type": "integer",
+          "description": "Chebyshev radius of a driver's dynamic view.",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 16
+        },
+        "jamTicks": {
+          "type": "integer",
+          "description": "Consecutive blocked ticks before a robot counts as jammed.",
+          "default": 8,
+          "minimum": 1,
+          "maximum": 500
+        },
+        "attempt1Ms": {
+          "type": "integer",
+          "description": "Deadline for the first parallel LLM batch.",
+          "default": 9000,
+          "minimum": 1000,
+          "maximum": 30000
+        },
+        "retryMs": {
+          "type": "integer",
+          "description": "Deadline for the single retry batch.",
+          "default": 4000,
+          "minimum": 1000,
+          "maximum": 30000
+        },
+        "turnBudgetMs": {
+          "type": "integer",
+          "description": "Monotonic deadline around a whole command turn.",
+          "default": 14000,
+          "minimum": 0,
+          "maximum": 60000
+        },
+        "turnSpacingMs": {
+          "type": "integer",
+          "description": "Wall-clock floor between consecutive batch starts.",
+          "default": 12000,
+          "minimum": 0,
+          "maximum": 60000
+        },
+        "wallClockBudgetSeconds": {
+          "type": "integer",
+          "description": "The engine's hard stop; must stay inside 60% of episode_timeout_minutes.",
+          "default": 660,
+          "minimum": 10,
+          "maximum": 660
+        },
+        "lobbyJoinTimeoutTicks": {
+          "type": "integer",
+          "description": "Lobby budget before the game starts without a seat.",
+          "default": 2400,
+          "minimum": 1
+        },
+        "gameOverTicks": {
+          "type": "integer",
+          "description": "Post-game hold before the process exits.",
+          "default": 30,
+          "minimum": 0,
+          "maximum": 600
+        },
+        "minPlayers": {
+          "type": "integer",
+          "description": "Seats that must join before play starts.",
+          "default": 4,
+          "minimum": 0,
+          "maximum": 4
+        },
+        "fastMode": {
+          "type": "boolean",
+          "default": true,
+          "description": "Advance as soon as every connected seat has acknowledged the frame."
+        },
+        "showPlayerLabels": {
+          "type": "boolean",
+          "default": false,
+          "description": "Never true: in-board sprites carry aliases only."
+        },
+        "num_agents": {
+          "type": "integer",
+          "description": "Seats. Exactly four, in every variant and in the certification fixture.",
+          "default": 4,
+          "minimum": 4,
+          "maximum": 4
+        }
+      }
+    },
+    "results_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "names": {
+          "type": "array",
+          "description": "The seats' REAL policy names, spectator side only.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "aliases": {
+          "type": "array",
+          "description": "Alpha, Bravo, Charlie, Delta.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "scores": {
+          "type": "array",
+          "description": "100 * teamDelivered + delivered[s].",
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "win": {
+          "type": "array",
+          "description": "teamDelivered >= parDeliveries; the same for all four seats.",
+          "items": {
+            "type": "boolean"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "winner": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "Always null: a cooperative episode has no winner."
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "deadline",
+            "fault"
+          ]
+        },
+        "teamDelivered": {
+          "type": "integer"
+        },
+        "parDeliveries": {
+          "type": "integer"
+        },
+        "delivered": {
+          "type": "array",
+          "description": "Requested shelves delivered by that seat's robot.",
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "stowed": {
+          "type": "array",
+          "description": "Shelves put back down on a storage slot.",
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "blockedMoves": {
+          "type": "array",
+          "description": "FORWARD requests that did not move.",
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "jams": {
+          "type": "integer"
+        },
+        "jamTicks": {
+          "type": "integer"
+        },
+        "longestJamTicks": {
+          "type": "integer"
+        },
+        "finalTick": {
+          "type": "integer"
+        },
+        "turnsPlayed": {
+          "type": "integer"
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "policyKinds": {
+          "type": "array",
+          "description": "llm or scripted, per seat.",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "crossPlay": {
+          "type": "boolean",
+          "description": "At least one LLM seat and one scripted seat sat together."
+        },
+        "llmTurns": {
+          "type": "array",
+          "description": "Turns that seat answered with a model reply.",
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "fallbackTurns": {
+          "type": "array",
+          "description": "Turns that seat fell back to the courteous order.",
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "ordersRejected": {
+          "type": "array",
+          "description": "Orders repaired to the seat's previous order.",
+          "items": {
+            "type": "integer"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "deadSeats": {
+          "type": "array",
+          "description": "Seats that never joined.",
+          "items": {
+            "type": "boolean"
+          },
+          "minItems": 4,
+          "maxItems": 4
+        },
+        "stopDetail": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "player": [
+    {
+      "id": "courteous",
+      "type": "player",
+      "name": "rware-warehouse-courteous",
+      "description": "The published scripted default and the server-side fallback: it yields when it and a lower-slot robot have both been blocked, stows clear of the workstation queue lane, delivers to the less crowded workstation, and leaves a shelf another robot is already closer to.",
+      "image": "{{RWARE_WAREHOUSE_IMAGE}}",
+      "run": [
+        "/bin/rware-warehouse-player"
+      ],
+      "source_url": "https://github.com/Metta-AI/cogame-rware-warehouse",
+      "env": {
+        "PLAYER_SCRIPTED": "courteous"
+      },
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "64Mi"
+        },
+        "limits": {
+          "cpu": "1"
+        }
+      }
+    },
+    {
+      "id": "shuttle",
+      "type": "player",
+      "name": "rware-warehouse-shuttle",
+      "description": "Pure greed, no jam handling: stow a delivered shelf, deliver a requested one to the nearer workstation, otherwise fetch the requested shelf with the shortest path. A real opponent to jam against, and the control that answers whether the LLM actually coordinated.",
+      "image": "{{RWARE_WAREHOUSE_IMAGE}}",
+      "run": [
+        "/bin/rware-warehouse-player"
+      ],
+      "source_url": "https://github.com/Metta-AI/cogame-rware-warehouse",
+      "env": {
+        "PLAYER_SCRIPTED": "shuttle"
+      },
+      "resources": {
+        "requests": {
+          "cpu": "100m",
+          "memory": "64Mi"
+        },
+        "limits": {
+          "cpu": "1"
+        }
+      }
+    }
+  ],
+  "variants": [
+    {
+      "id": "warehouse",
+      "name": "Warehouse (tiny, 4 robots, 4 requests)",
+      "description": "RWARE rware-tiny-4ag-v2 scale: a 10x11 warehouse with 32 shelves, two workstations and four robots, one per seat, working a four-shelf request board over 500 ticks and 25 command turns.",
+      "game_config": {
+        "players": [
+          {
+            "name": "Alpha"
+          },
+          {
+            "name": "Bravo"
+          },
+          {
+            "name": "Charlie"
+          },
+          {
+            "name": "Delta"
+          }
+        ],
+        "num_agents": 4,
+        "minPlayers": 4,
+        "shelfColumns": 3,
+        "shelfRows": 1,
+        "columnHeight": 8,
+        "requestQueue": 4,
+        "parDeliveries": 8,
+        "maxTicks": 500,
+        "turnTicks": 20,
+        "sensorRange": 3,
+        "jamTicks": 8,
+        "attempt1Ms": 9000,
+        "retryMs": 4000,
+        "turnBudgetMs": 14000,
+        "turnSpacingMs": 12000,
+        "wallClockBudgetSeconds": 660,
+        "lobbyJoinTimeoutTicks": 2400,
+        "fastMode": true,
+        "showPlayerLabels": false
+      }
+    },
+    {
+      "id": "wide-hard",
+      "name": "Wide floor, hard (16x11, 4 robots, 2 requests)",
+      "description": "Upstream's rware-1x5-8h-4ag-2req shape: a 16x11 warehouse with 64 shelves and four robots sharing only TWO open requests, so the fleet must decide who works and who keeps the aisles clear.",
+      "game_config": {
+        "players": [
+          {
+            "name": "Alpha"
+          },
+          {
+            "name": "Bravo"
+          },
+          {
+            "name": "Charlie"
+          },
+          {
+            "name": "Delta"
+          }
+        ],
+        "num_agents": 4,
+        "minPlayers": 4,
+        "shelfColumns": 5,
+        "shelfRows": 1,
+        "columnHeight": 8,
+        "requestQueue": 2,
+        "parDeliveries": 5,
+        "maxTicks": 500,
+        "turnTicks": 20,
+        "sensorRange": 3,
+        "jamTicks": 8,
+        "attempt1Ms": 9000,
+        "retryMs": 4000,
+        "turnBudgetMs": 14000,
+        "turnSpacingMs": 12000,
+        "wallClockBudgetSeconds": 660,
+        "lobbyJoinTimeoutTicks": 2400,
+        "fastMode": true,
+        "showPlayerLabels": false
+      }
+    }
+  ],
+  "certification": {
+    "players": [
+      {
+        "player_id": "courteous"
+      },
+      {
+        "player_id": "shuttle"
+      },
+      {
+        "player_id": "courteous"
+      },
+      {
+        "player_id": "shuttle"
+      }
+    ],
+    "game_config": {
+      "players": [
+        {
+          "name": "Alpha"
+        },
+        {
+          "name": "Bravo"
+        },
+        {
+          "name": "Charlie"
+        },
+        {
+          "name": "Delta"
+        }
+      ],
+      "num_agents": 4,
+      "minPlayers": 4,
+      "shelfColumns": 3,
+      "shelfRows": 1,
+      "columnHeight": 8,
+      "requestQueue": 4,
+      "parDeliveries": 8,
+      "maxTicks": 500,
+      "turnTicks": 20,
+      "sensorRange": 3,
+      "jamTicks": 8,
+      "wallClockBudgetSeconds": 240,
+      "lobbyJoinTimeoutTicks": 600,
+      "fastMode": true,
+      "showPlayerLabels": false,
+      "seed": 42
+    }
+  }
+}
