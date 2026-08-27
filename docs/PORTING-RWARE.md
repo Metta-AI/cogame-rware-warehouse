@@ -103,6 +103,25 @@ each constant beside the line it was read from.
     static warehouse fact the note wants a driver to plan from.
     `docs/RULES.md` states the shipped rule.
 
+## Divergences from the design note's viewer and packaging plan
+
+The entries above are divergences from UPSTREAM. These are divergences from the
+DESIGN NOTE: the shipped code is deliberate and internally consistent, but it
+does not match what the note describes, so it is recorded here rather than left
+for a reader to discover in a diff.
+
+13. **No emscripten virtual filesystem: `--preload-file data@data` and
+    `-s FILESYSTEM=1` are dropped.** The note lists both among the link flags
+    kept as one internally consistent set. The bootstrap-critical half of that
+    set is untouched -- the module is emitted NON-modularized and the Worker
+    sets `Module.onRuntimeInitialized`, which is the pairing whose mismatch
+    deadlocked cogame-lantern -- but nothing in the bundle reads a preloaded
+    file: `Dockerfile.replay-viewer` copies every asset next to the worker and
+    `client/broadcast_core.js` fetches them over HTTP, so a `.data` package
+    would ship each asset twice and add a second, silent load path.
+    `tests/test_rware_viewer.nim` pins the absence rather than accepting
+    either shape.
+
 ## Not ported
 
 The flattened `(1 + 2*sensor_range)^2` observation vector, `msg_bits`
