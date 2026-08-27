@@ -122,6 +122,19 @@ for a reader to discover in a diff.
     `tests/test_rware_viewer.nim` pins the absence rather than accepting
     either shape.
 
+14. **Speed chips are `[1, 2, 4, 8]`, not the note's `[0.5, 1, 2, 4, 8]`.**
+    The playback speed is an INTEGER multiplier all the way down: `sim_types`
+    holds `PlaybackSpeeds` as an integer array, `wire_constants.nim` emits it
+    through `jsIntArray` so the page and the sim cannot disagree, and
+    `replay_runtime.advanceReplayFrame` multiplies the tick accumulator by it.
+    A `0.5` chip would need a float on that wire and a fractional accumulator
+    in the re-derivation path -- the one place this port keeps free of
+    floating point (`tests/test_rware_sim.nim`'s no-float grep). The default
+    is still `1`, so the note's playback-length arithmetic (500 ticks at 30
+    fps = 16.7 s) is unchanged; the starter's own set was
+    `[1, 2, 3, 4, 8, 16]`, so this is a narrowing of an integer ladder, not a
+    new kind of control.
+
 ## Not ported
 
 The flattened `(1 + 2*sensor_range)^2` observation vector, `msg_bits`
