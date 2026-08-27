@@ -134,6 +134,31 @@ suite "rware replay":
     ## the prompt is NEVER in the bytes
     check "a strategy" notin writer.bytes()
 
+  test "the re-derived per-turn counters equal the recorded ones":
+    ## `results.llmTurns` / `results.fallbackTurns` ride in the result record,
+    ## but a reader that re-derives them from the chat stream must land on the
+    ## same numbers -- otherwise the replay contradicts itself about how often
+    ## a seat's driver actually answered.
+    var config = testConfig(maxTicks = 200)
+    var engine = scriptedEngine(config)
+    ## two LLM seats with no credentials: every turn is a fallback, written
+    ## with attempt 1 and cause `no_credentials`
+    for seat in [0, 1]:
+      engine.seats[seat].isLlm = true
+      engine.seats[seat].prompt = "a prompt, so the seat is an LLM seat"
+    let run = runHeadlessEpisode(config, engine, "", joinSeats = {0'u8, 1'u8})
+    check run.sim.fallbackTurns[0] == run.sim.turnsPlayed
+    check run.sim.fallbackTurns[2] == 0
+    let data = parseReplayBytes(run.bytes)
+    var back = initSimServer(configFromReplay(data))
+    back.applyJoinRecords(data)
+    for record in data.chats:
+      back.applyReplayChat(record.text)
+    for seat in 0 ..< SeatCount:
+      checkpoint("seat " & $seat)
+      check back.fallbackTurns[seat] == run.sim.fallbackTurns[seat]
+      check back.llmTurns[seat] == run.sim.llmTurns[seat]
+
   test "replay_summary is strict UTF-8 JSON":
     ## 26. Run tools/replay_summary.py over a replay whose every capped field is
     ##     filled to exactly its cap with 4-byte emoji; the output must parse

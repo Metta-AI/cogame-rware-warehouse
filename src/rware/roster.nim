@@ -138,9 +138,10 @@ proc applyJoinRecords*(sim: var SimServer, data: ReplayData) =
 
 proc applyReplayChat*(sim: var SimServer, text: string) =
   ## Playback: chat records are re-applied into NON-HASHED fields only. A
-  ## `register` record restores the policy kind and label; a `fallback` bumps
-  ## the seat's counter; a `directive` bumps llmTurns. None of this can affect
-  ## the simulation.
+  ## `register` record restores the policy kind and label; a `directive`
+  ## record bumps that seat's `llmTurns` or `fallbackTurns` by its source, the
+  ## same way the live loop counts them. None of this can affect the
+  ## simulation.
   if text.len == 0 or text[0] != '{':
     return
   var node: JsonNode
@@ -160,12 +161,20 @@ proc applyReplayChat*(sim: var SimServer, text: string) =
       if sim.seatPolicyLabel[slot].len > 0 and
           sim.seatNames[slot] == seatAlias(slot):
         sim.seatNames[slot] = sim.seatPolicyLabel[slot]
-  of "fallback":
-    if slot >= 0 and slot < SeatCount and node{"attempt"}.getInt(1) == 2:
-      inc sim.fallbackTurns[slot]
   of "directive":
-    if slot >= 0 and slot < SeatCount and node{"source"}.getStr() == "llm":
-      inc sim.llmTurns[slot]
+    ## Both per-turn counters come from the DIRECTIVE record, which is written
+    ## once per seat per turn carrying the source of the directive that was
+    ## actually installed -- the same rule the live loop counts by
+    ## (episode.nim). Counting `fallback` records instead double-counted a seat
+    ## that failed both attempts (two attempt-2 records) and missed a seat that
+    ## never got to call at all (one attempt-1 record, cause `budget_guard`,
+    ## `rate_guard` or `no_credentials`), so the re-derived numbers disagreed
+    ## with the recorded ones in both directions.
+    if slot >= 0 and slot < SeatCount:
+      case node{"source"}.getStr()
+      of "llm": inc sim.llmTurns[slot]
+      of "fallback": inc sim.fallbackTurns[slot]
+      else: discard
   of "result":
     let results = node{"results"}
     if not results.isNil and results.kind == JObject:
