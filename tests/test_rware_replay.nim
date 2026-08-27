@@ -159,6 +159,30 @@ suite "rware replay":
       check back.fallbackTurns[seat] == run.sim.fallbackTurns[seat]
       check back.llmTurns[seat] == run.sim.llmTurns[seat]
 
+  test "playback opens at the game start, never the recorded lobby":
+    ## A ladder episode records the pre-game lobby (seats joining, LLM
+    ## registration) before its gameStart record -- 234 frozen frames on a real
+    ## prod replay -- and the viewer used to dwell through them at 6 fps: ~40 s
+    ## stuck on the first tick until someone scrubbed. Playback must open AT
+    ## the game-start frame, and every seek must clamp there, matching the
+    ## scrubber axis that already spans [startFrame, maxFrame].
+    var config = testConfig(maxTicks = 60)
+    config.lobbyJoinTimeoutTicks = 24
+    let run = runScriptedEpisode(config, joinSeats = {})
+    var data = parseReplayBytes(run.bytes)
+    check data.gameStarts.len >= 1
+    check data.gameStarts[0].tick >= 24
+    var
+      initialized = initReplayRuntime(data)
+      player = initialized.player
+      sim = initialized.sim
+    check player.startFrame == data.gameStarts[0].tick
+    check player.frame == player.startFrame + 1
+    check sim.phase != Lobby
+    player.seekTo(sim, 0)
+    check player.frame == player.startFrame + 1
+    check sim.phase != Lobby
+
   test "replay_summary is strict UTF-8 JSON":
     ## 26. Run tools/replay_summary.py over a replay whose every capped field is
     ##     filled to exactly its cap with 4-byte emoji; the output must parse
