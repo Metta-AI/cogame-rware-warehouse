@@ -199,6 +199,20 @@ for a reader to discover in a diff.
     `tools/ci/baseline_tuning.json` carry the re-swept pick; `penalty` and
     `stowClearance` are unchanged.
 
+20. **`yield`'s passing-place table excludes the robot's own cell and every
+    queue-lane cell.** The note defines a passing place as "a highway cell with
+    >= 3 free orthogonal neighbours, i.e. an aisle junction (ties by lowest
+    cell index)" and names neither exclusion; the >= 3 rule and the tie-break
+    are exactly as pinned. Own cell: standing still is a length-1 cycle in the
+    move graph, so everyone queued behind the yielding robot still cannot move
+    -- a `yield` that resolves to "stay here" is a no-op with a `done` on it.
+    Queue lane: the two columns below the shelf blocks are where every delivery
+    queues, so backing INTO them moves the standoff onto the one lane that must
+    stay clear. Both are stated in `docs/RULES.md` and at the call site in
+    `robots.passingPlacesByDistance` / `warehouse.initWarehouse`. (Divergence
+    10 above covers the other half of the same order: `yield` is the one order
+    that plans with the other robots as obstacles.)
+
 ## Not ported
 
 The flattened `(1 + 2*sensor_range)^2` observation vector, `msg_bits`

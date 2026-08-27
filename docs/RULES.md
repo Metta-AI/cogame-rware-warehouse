@@ -98,7 +98,7 @@ or the driver changes it.
 | `fetch S` | `S`'s standing cell (its home until someone stows it elsewhere) | `TOGGLE_LOAD` on arrival | `done` when loaded; `shelf_gone` if the cell holds no shelf; `already_loaded` if issued while carrying; `no_path` if BFS fails |
 | `deliver W` | that workstation cell | none — the engine credits the delivery | `done` on credit; `not_loaded` if issued while empty; `no_path` if BFS fails |
 | `stow [x y]` | the named storage cell, else the nearest seen-empty one | `TOGGLE_LOAD` on arrival | `done` when unloaded; `no_free_slot` if none is known; `not_loaded` if issued while empty |
-| `yield` | the nearest aisle junction outside the queue lane, reachable **around** the other robots | none | `done` on arrival, then holds |
+| `yield` | the nearest aisle junction **other than the cell the robot is standing on** and outside the workstation queue lane, reachable **around** the other robots | none | `done` on arrival, then holds |
 | `hold` | — | `NOOP` every tick | never finishes |
 
 Path planning is a 4-connected BFS over the robot's *believed* grid: every cell
