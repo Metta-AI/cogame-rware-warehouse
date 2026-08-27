@@ -129,6 +129,18 @@ for a reader to discover in a diff.
     same file in the native page and in the Worker, so the two delivery modes
     cannot drift.
 
+17. **The endcard forbidden-vocabulary sweep drops the word `kill`.** The note
+    lists `kill` among the words that must not appear anywhere in the shipped
+    labels and asserts zero matches. It cannot be zero: the same note lists
+    `#killfeed` among the starter chrome ids KEPT, and the page carries
+    `<div id="killfeed">`. `tests/test_rware_endcard_labels.nim` therefore
+    sweeps the note's list minus that one word, and says so at the constant.
+    The thing the word was there to catch -- ctf's kill beat -- is enforced
+    separately and positively: `tools/build_broadcast_page.py` deletes
+    `.beat-marker.kill` through `REMOVED_SELECTORS`, and
+    `tests/test_rware_viewer.nim` asserts the beat CSS set is exactly
+    `{delivery, jam, fallback, end}`.
+
 Everything not listed above is upstream's, and `tests/test_rware_upstream.nim`,
 `tests/test_rware_layout.nim` and `tests/test_rware_determinism.nim` are what
 keep it that way.
