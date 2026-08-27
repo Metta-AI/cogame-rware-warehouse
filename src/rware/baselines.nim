@@ -140,7 +140,12 @@ proc fetchOrder(
             mine:
           cost += params.penalty
           break
-    if result.kind == okHold or cost < best:
+    if result.kind == okHold or cost < best or
+        (cost == best and id < result.shelf):
+      ## Ties by LOWEST SHELF ID (design.md:638, :652), not by the shelf's
+      ## position in the request queue: the queue's order is the draw order,
+      ## which would make the choice depend on delivery history rather than on
+      ## the board in front of the robot.
       result = RobotOrder(
         kind: okFetch, shelf: id, station: 0, x: -1, y: -1, fromReply: true)
       best = cost

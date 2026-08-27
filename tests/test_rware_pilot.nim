@@ -221,6 +221,29 @@ suite "rware pilot and baselines":
       check sim.world.wh.isHighway(park)
       check sim.world.wh.cellX(park) notin [laneLeft, laneRight]
 
+  test "an equal-cost fetch is broken by the lowest shelf id":
+    ## design.md:638 (`shuttle` rule 3) and :652 (`courteous` rule 4) both pin
+    ## "ties by lowest shelf id". The request QUEUE is in draw order, so an
+    ## iteration-order tie-break would make the choice depend on delivery
+    ## history instead of on the board.
+    for baseline in [blShuttle, blCourteous]:
+      for queueOrder in [@[1, 0], @[0, 1]]:
+        var sim = emptyBoard()
+        sim.clearShelves()
+        let slot = sim.place(2, 4, DirUp)
+        ## two storage cells one step from the robot, so the BFS costs tie
+        let
+          low = sim.world.wh.storageOf[sim.cellOf(2, 3)]
+          high = sim.world.wh.storageOf[sim.cellOf(1, 4)]
+        check low >= 0 and high >= 0 and low < high
+        sim.standShelf(low, 2, 3)
+        sim.standShelf(high, 1, 4)
+        sim.requestOnly(
+          if queueOrder == @[1, 0]: [high, low] else: [low, high])
+        let order = scriptedDirective(sim, slot, baseline).order
+        check order.kind == okFetch
+        check order.shelf == low
+
   test "hold stands still, wherever the robot is standing":
     ## `hold` is NOOP every tick and never finishes: a driver that says "hold"
     ## in a jam standoff must not have its robot drive to a park cell instead.
