@@ -28,13 +28,17 @@ const
     # yieldAfter: blocked ticks since the last turn that make a robot back off.
     # penalty: the cost a contested shelf carries in the fetch choice.
     # stowClearance: how far from the workstation queue lane a stow prefers.
-    yieldAfter: 6,
+    yieldAfter: 4,
     penalty: 4,
     stowClearance: 2
   )
     ## Not guessed: tools/tune_baselines.nim sweeps the three head to head and
     ## tools/ci/baseline_tuning.json records the pick;
     ## tests/test_rware_tuning.nim asserts the shipped defaults still equal it.
+    ## `yieldAfter` was re-swept from 6 to 4 when the pilot stopped parking a
+    ## credited robot on the workstation: with the pad clearing itself, backing
+    ## off sooner is strictly better for fleet throughput at every horizon the
+    ## sweep runs (see vendor/PATCHES.md divergence 19).
 
   DefaultBaseline* = blCourteous
     ## Anything unrecognised is the published default (the starter's rule).

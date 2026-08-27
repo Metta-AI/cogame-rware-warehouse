@@ -272,6 +272,37 @@ proc bfsDistance*(
       inc tail
   -1
 
+proc bfsDistanceField*(
+  wh: Warehouse, start: int, passable: openArray[bool]
+): seq[int] =
+  ## Shortest 4-connected distance from `start` to EVERY cell, or -1 where no
+  ## route exists. One sweep, `NeighbourOrder`, same rules as `bfsDistance` --
+  ## for a caller that has to rank many candidate cells and must rank them by
+  ## the distance the robot will actually travel, not by a straight line.
+  let cells = wh.width * wh.height
+  result = newSeq[int](cells)
+  for i in 0 ..< cells:
+    result[i] = -1
+  if start < 0 or start >= cells:
+    return
+  var
+    queue = newSeq[int](cells)
+    head = 0
+    tail = 0
+  result[start] = 0
+  queue[tail] = start
+  inc tail
+  while head < tail:
+    let cell = queue[head]
+    inc head
+    for direction in NeighbourOrder:
+      let next = wh.neighbourCell(cell, direction)
+      if next < 0 or result[next] >= 0 or not passable[next]:
+        continue
+      result[next] = result[cell] + 1
+      queue[tail] = next
+      inc tail
+
 proc asciiMap*(wh: Warehouse): string =
   ## The floor plan a driver is handed once, at registration: `#` a storage
   ## slot, `.` an aisle, `W` a workstation. Static for the whole episode.

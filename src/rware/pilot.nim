@@ -34,11 +34,22 @@ proc parkCell*(sim: SimServer, seat: int): int =
   ## finished a delivery mid-turn would stand on the workstation and wall off
   ## the only lane to it; without the occupancy filter two idle robots would
   ## pick the same cell and the loser would grind against it forever.
+  ##
+  ## "Nearest" is the distance the robot will actually TRAVEL, from one BFS
+  ## sweep over its believed grid -- not a straight line. A straight-line
+  ## nearest picks a different cell from each cell along the way, so a robot
+  ## leaving a workstation chased a target that moved with it and walked the
+  ## whole queue lane instead of stepping out of it. Ties by lowest cell index.
   let
     wh = sim.world.wh
     me = sim.world.robots[seat].cell
     laneLeft = wh.width div 2 - 1
     laneRight = wh.width div 2
+    passable =
+      if sim.world.robots[seat].carrying >= 0:
+        loadedPassable(sim.world, seat, me)
+      else: emptyPassable(sim.world)
+    distance = bfsDistanceField(wh, me, passable)
   result = -1
   var best = 0
   for cell in 0 ..< wh.highway.len:
@@ -50,7 +61,9 @@ proc parkCell*(sim: SimServer, seat: int): int =
     let occupant = sim.world.robotAtCell(cell)
     if occupant >= 0 and occupant != seat:
       continue
-    let d = wh.chebyshev(me, cell)
+    let d = distance[cell]
+    if d < 0:
+      continue
     if result < 0 or d < best:
       result = cell
       best = d
@@ -147,6 +160,15 @@ proc yieldStep(sim: SimServer, seat: int): tuple[action: int, arrived: bool] =
     return (rotationToward(robot.facing, wanted), false)
   (ActionNoop, true)
 
+proc parkStep(sim: SimServer, seat: int): int =
+  ## The idle action: one step toward the park cell, or NOOP once standing on
+  ## it. An order that has FINISHED leaves the robot idle, and an idle robot
+  ## parks -- the fixed rule of design.md:622-625.
+  let park = parkCell(sim, seat)
+  if park < 0 or sim.world.robots[seat].cell == park:
+    return ActionNoop
+  stepToward(sim, seat, park).action
+
 proc chooseAction*(sim: SimServer, seat: int): PilotStep =
   ## One action index in upstream's five-way space, plus the honest report of
   ## how the order is going. Never leaves a robot unactuated.
@@ -161,7 +183,20 @@ proc chooseAction*(sim: SimServer, seat: int): PilotStep =
   of okFetch:
     if robot.carrying >= 0:
       result.outcome = orAlreadyLoaded
-  of okDeliver, okStow:
+  of okDeliver:
+    if robot.carrying < 0:
+      result.outcome = orNotLoaded
+    elif not sim.world.requested[robot.carrying] and
+        (robot.cell == wh.goals[clamp(order.station, 0, GoalCount - 1)] or
+         robot.lastResult == orDone):
+      ## The shelf on the forks is not on the request board, and the robot has
+      ## either reached the pad with it or already been credited for it -- so
+      ## `deliver` is FINISHED (`done` on credit, design.md:609). A finished
+      ## order leaves the robot idle and an idle robot parks; without this the
+      ## robot emits NOOP on the workstation until the next command turn and
+      ## walls off the only lane to it (design.md:622-625).
+      result.outcome = orDone
+  of okStow:
     if robot.carrying < 0:
       result.outcome = orNotLoaded
   of okYield, okHold:
@@ -186,11 +221,7 @@ proc chooseAction*(sim: SimServer, seat: int): PilotStep =
     ## `hold` is NOT idle -- it is a standing order to stand still, so it never
     ## reaches here: it keeps its `orRunning` outcome, has no goal cell, and
     ## falls through to the `goal < 0` return below as NOOP, every tick.
-    let park = parkCell(sim, seat)
-    if park < 0 or robot.cell == park:
-      return
-    let step = stepToward(sim, seat, park)
-    result.action = step.action
+    result.action = parkStep(sim, seat)
     return
 
   if goal < 0:
@@ -211,7 +242,9 @@ proc chooseAction*(sim: SimServer, seat: int): PilotStep =
         result.outcome = orNoFreeSlot
     of okDeliver:
       ## The engine credits the delivery when the shelf arrives; standing on
-      ## the pad is the whole action.
+      ## the pad is the whole action. The credit itself finishes the order --
+      ## see the refusal section above, which catches it on this tick and on
+      ## every later one.
       discard
     of okYield:
       result.outcome = orDone

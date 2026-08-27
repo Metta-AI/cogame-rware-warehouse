@@ -221,6 +221,42 @@ suite "rware pilot and baselines":
       check sim.world.wh.isHighway(park)
       check sim.world.wh.cellX(park) notin [laneLeft, laneRight]
 
+  test "a credited deliver finishes and gets off the pad":
+    ## design.md:609 -- `deliver W` finishes with `done` on credit -- and
+    ## :622-625 -- a finished order leaves the robot idle, and an idle robot
+    ## parks, "without [which] a robot that finished a delivery mid-turn would
+    ## stand on the workstation and wall off the only lane to it".
+    var sim = emptyBoard()
+    sim.clearShelves()
+    let
+      pad = sim.world.wh.goals[0]
+      carried = 0
+      slot = sim.place(
+        sim.world.wh.cellX(pad), sim.world.wh.cellY(pad), DirUp,
+        carrying = carried)
+    sim.requestOnly([carried])
+    sim.setOrder(slot, okDeliver, station = 0)
+    ## still requested: the credit has not landed, so the order is running and
+    ## standing on the pad IS the action
+    var step = chooseAction(sim, slot)
+    check step.outcome == orRunning
+    check step.action == ActionNoop
+    ## credited: the shelf on the forks is no longer requested
+    sim.requestOnly([])
+    step = chooseAction(sim, slot)
+    check step.outcome == orDone
+    check step.action != ActionNoop
+    ## and it actually leaves: the park cell is off the workstation lane, and
+    ## the robot STAYS off it -- driven by the pilot, tick after tick
+    for tick in 0 ..< 12:
+      sim.step()
+    check sim.world.robots[slot].cell != pad
+    check sim.world.robots[slot].lastResult == orDone
+    let park = parkCell(sim, slot)
+    check sim.world.robots[slot].cell == park
+    check sim.world.wh.cellX(park) notin
+      [sim.world.wh.width div 2 - 1, sim.world.wh.width div 2]
+
   test "an equal-cost fetch is broken by the lowest shelf id":
     ## design.md:638 (`shuttle` rule 3) and :652 (`courteous` rule 4) both pin
     ## "ties by lowest shelf id". The request QUEUE is in draw order, so an

@@ -1,7 +1,7 @@
 {
   "swept": "tools/tune_baselines.nim --sweep",
-  "note": "The cooperative head-to-head sweep's pick: the fleet throughput of two courteous and two shuttle robots over three seeds. tests/test_rware_tuning.nim asserts the shipped DefaultBaselineParams still equal it, so a hand-edit of the defaults fails the build.",
-  "yieldAfter": 6,
+  "note": "The cooperative head-to-head sweep's pick: the fleet throughput of two courteous and two shuttle robots over three seeds. tests/test_rware_tuning.nim asserts the shipped DefaultBaselineParams still equal it, so a hand-edit of the defaults fails the build. Re-swept after the credited-deliver park fix (r1 finding F17), which changed the controller: yieldAfter 6 -> 4, ranked 1st at the tool's 200-tick horizon and 4th of 27 at the test's 120-tick horizon.",
+  "yieldAfter": 4,
   "penalty": 4,
   "stowClearance": 2
 }

@@ -186,6 +186,19 @@ for a reader to discover in a diff.
     `tests/test_rware_manifest.nim` asserts the embedded copy equals the file
     it was embedded from, byte for byte.
 
+19. **`yieldAfter` is 4, not the note's 6.** The note quotes the three
+    `courteous` tunables as `yieldAfter = 6, penalty = 4, stowClearance = 2`
+    and, in the same paragraph, pins the MECHANISM that produced them: the
+    head-to-head sweep in `tools/tune_baselines.nim`, "not guessed", re-run by
+    `ci.yml` so a controller change that invalidates the pick is red in CI
+    rather than in a ladder round. The r1 fix for finding F17 -- a credited
+    `deliver` now finishes and the robot parks off the workstation instead of
+    squatting it -- is such a change, and it moved the pick: `(4, 4, 2)` now
+    ranks 1st of 27 at the tool's 200-tick horizon and 4th at the test's
+    120-tick horizon, where `(6, 4, 2)` fell to 16th. The shipped defaults and
+    `tools/ci/baseline_tuning.json` carry the re-swept pick; `penalty` and
+    `stowClearance` are unchanged.
+
 ## Not ported
 
 The flattened `(1 + 2*sensor_range)^2` observation vector, `msg_bits`
