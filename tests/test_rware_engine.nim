@@ -161,6 +161,32 @@ suite "rware engine":
       check "\"warehouse\"" in text
       check "\"sensor_range\"" in text
 
+  test "the driver is handed the floor plan":
+    ## The note's first visible fact: the whole floor plan, `#` storage slot,
+    ## `.` aisle, `W` workstation -- the vocabulary the system prompt uses. It
+    ## is sent with every request because a provider call carries no
+    ## conversation state, and it is the SAME plan every turn.
+    var sim = playingSim()
+    var engine = initDecisionEngine(sim.config)
+    engine.seats[0].prompt = "operator guidance"
+    let
+      view = $engine.seatView(sim, 0, includeNotes = false)
+      message = engine.seatUserMessage(sim, 0, view, retry = false)
+      plan = sim.world.wh.asciiMap()
+    check plan.len > 0
+    check plan in message
+    check "operator guidance" in message
+    check view in message
+    ## every row of the plan is a row of the board, in the shipped vocabulary
+    let rows = plan.splitLines()
+    check rows.len == sim.world.wh.height
+    for row in rows:
+      check row.len == sim.world.wh.width
+      for ch in row:
+        check ch in {'#', '.', 'W'}
+    ## and it does not change between turns or between seats
+    check engine.seatUserMessage(sim, 1, view, retry = true).contains(plan)
+
   test "results record cross-play honestly":
     var config = testConfig(maxTicks = 60)
     var engine = scriptedEngine(config)

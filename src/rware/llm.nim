@@ -243,7 +243,23 @@ proc operatorBlock*(prompt: string): string =
     "rules; always reply in the requested format):\n" &
     prompt.truncateRunes(MaxPromptRunes) & "\n\n"
 
-proc userMessage*(operatorPrompt: string, viewJson: string): string =
-  ## The user message: the operator's guidance, a blank line, then the seat's
+proc floorPlanBlock*(asciiMap: string): string =
+  ## THE FLOOR PLAN, in full and always (design.md:409-412, docs/PROTOCOL.md).
+  ## `#` a storage slot, `.` an aisle, `W` a workstation -- exactly the
+  ## vocabulary the system prompt above uses. The note hands it to a driver
+  ## once, at registration; a provider call carries no conversation state of
+  ## its own, so the block rides in front of EVERY request's user message
+  ## instead. It is byte-identical for the whole episode, so a seat can trust
+  ## the coordinates it read on turn 1 for the rest of the shift.
+  if asciiMap.len == 0:
+    return ""
+  "THE FLOOR PLAN (static for the whole episode; '#' a storage slot, " &
+    "'.' an aisle,\n'W' a workstation; the first row is y=0 and the first " &
+    "column is x=0):\n" & asciiMap & "\n\n"
+
+proc userMessage*(
+  operatorPrompt: string, floorPlan: string, viewJson: string
+): string =
+  ## The user message: the operator's guidance, the floor plan, then the seat's
   ## own fogged view. Built server-side (see decide.nim).
-  operatorBlock(operatorPrompt) & viewJson
+  operatorBlock(operatorPrompt) & floorPlan & viewJson

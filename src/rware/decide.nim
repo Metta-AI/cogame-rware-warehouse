@@ -178,6 +178,22 @@ proc seatView*(
   if includeNotes:
     result["your_notes"] = %engine.notes[seat]
 
+proc seatUserMessage*(
+  engine: DecisionEngine, sim: SimServer, seat: int, view: string,
+  retry: bool
+): string =
+  ## The whole user message one seat's provider call carries: that seat's
+  ## operator guidance, THE FLOOR PLAN (static, `#`/`.`/`W`, the vocabulary the
+  ## system prompt uses), then the seat's own fogged view -- plus the retry
+  ## nudge on attempt 2. One proc, so what a test reads is what a seat is sent.
+  result = userMessage(
+    engine.seats[seat].prompt,
+    floorPlanBlock(sim.world.wh.asciiMap()),
+    view)
+  if retry:
+    result.add("\n\nYour previous reply was not usable. Reply with ONLY " &
+      "the JSON object described above, starting with '{'.")
+
 proc refreshSeatMemory*(sim: var SimServer) =
   ## Per-turn bookkeeping the observation reads: what each robot spent blocked
   ## since the previous command turn. Not hashed -- it only ever reaches a
@@ -317,12 +333,9 @@ proc turn*(
     var batch: RequestBatch
     for seat in open:
       var view = engine.seatView(sim, seat, includeNotes = true)
-      var user = $view
-      if attempt > 0:
-        user.add("\n\nYour previous reply was not usable. Reply with ONLY " &
-          "the JSON object described above, starting with '{'.")
       let request = engine.client.requestFor(
-        SystemPrompt, userMessage(engine.seats[seat].prompt, user))
+        SystemPrompt,
+        engine.seatUserMessage(sim, seat, $view, retry = attempt > 0))
       batch.post(request.url, request.headers, request.body, $seat)
       engine.requestTimes.add(getMonoTime())
     let started = getMonoTime()

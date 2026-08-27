@@ -100,12 +100,14 @@ into the replay's `directive` record so the replay explains every decision.
 }
 ```
 
-**Visible.** The whole floor plan (sent once at registration as an ASCII map,
-`#` storage slot, `.` aisle, `W` workstation, then referred to by coordinates);
-the request board in full, with each shelf's home cell; everything about the
-seat's own robot; other robots and cell contents within Chebyshev
-`sensor_range = 3`; every seat's previous-turn `say` on the fleet radio; and the
-public fleet statistics.
+**Visible.** The whole floor plan as an ASCII map (`#` storage slot, `.` aisle,
+`W` workstation, then referred to by coordinates) — static for the whole
+episode, and prepended to **every** request's user message rather than sent once
+at registration, because a provider call carries no conversation state of its
+own (`src/rware/llm.nim`, `floorPlanBlock`); the request board in full, with each
+shelf's home cell; everything about the seat's own robot; other robots and cell
+contents within Chebyshev `sensor_range = 3`; every seat's previous-turn `say` on
+the fleet radio; and the public fleet statistics.
 
 `facing` is one of `up|down|left|right`. `last_order_result` is one of
 `running|done|shelf_gone|no_path|no_free_slot|not_loaded|already_loaded` — the
