@@ -278,7 +278,11 @@ suite "rware viewer":
     check "-s ALLOW_MEMORY_GROWTH" in config
     check "-s ENVIRONMENT=web,worker,node" in config
     check "-s EXPORTED_RUNTIME_METHODS=HEAPU8" in config
-    check "-s FILESYSTEM" in config or "--preload-file" in config or true
+    ## No --preload-file / FILESYSTEM: the bundle's art is FETCHED over HTTP by
+    ## broadcast_core.js from the files Dockerfile.replay-viewer copies next to
+    ## the worker, so packing a virtual filesystem into the wasm would ship
+    ## every asset twice.
+    check "--preload-file" notin config
     for fn in ["_main", "_malloc", "_free", "_rware_load_replay",
                "_rware_frame", "_rware_input", "_rware_packet_ptr",
                "_rware_packet_len", "_rware_mismatch_tick",
