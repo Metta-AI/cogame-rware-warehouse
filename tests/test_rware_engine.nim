@@ -51,9 +51,42 @@ suite "rware engine":
     check got == want
 
   test "no seat can stall the episode":
-    ## 22. A seat that never connects at all produces a finished episode inside
-    ##     the wall-clock budget, with deadSeats set, fallbackTurns counted,
-    ##     and exactly one closed-schema failure payload.
+    ## 22, both halves. A seat that CONNECTS THEN NEVER ANSWERS and a seat that
+    ##     never connects at all both produce a finished episode inside the
+    ##     wall-clock budget, with deadSeats set, fallbackTurns counted, and
+    ##     exactly one closed-schema failure payload.
+    block connectsThenNeverAnswers:
+      ## Seat 0 joins the lobby and registers as an LLM seat, and then its
+      ## driver never produces a usable reply for the whole episode -- here
+      ## because the client has no credentials, so every turn's call fails
+      ## instantly rather than after a 9 s deadline. The robot must still be
+      ## actuated, every turn, by the courteous fallback.
+      var config = testConfig(maxTicks = 200)
+      var engine = scriptedEngine(config)
+      engine.seats[0].isLlm = true
+      engine.seats[0].prompt = "a prompt, so this seat's driver is the LLM"
+      engine.seats[0].registered = true
+      let run = runHeadlessEpisode(config, engine, "")
+      check run.state.finished
+      check run.sim.endReason == ReasonComplete
+      check run.sim.endRule == EndRuleTickCap
+      ## it connected, so it is not a dead seat, and no failure is declared
+      check not run.sim.deadSeats[0]
+      check run.state.failureSlot == -1
+      ## every turn fell back, none reached the model, and the robot moved
+      check run.sim.fallbackTurns[0] == run.sim.turnsPlayed
+      check run.sim.llmTurns[0] == 0
+      check run.sim.turnsPlayed == config.maxTicks div config.turnTicks
+      check run.sim.blockedBy(0) + run.sim.world.robots[0].stowed +
+        run.sim.deliveredBy(0) > 0
+      ## and the replay says why, every turn, with a cause from the enum
+      var causes = 0
+      for record in parseReplayBytes(run.bytes).chats:
+        let node = parseJson(record.text)
+        if node{"k"}.getStr() == "fallback" and node{"slot"}.getInt(-1) == 0:
+          check node{"cause"}.getStr() == "no_credentials"
+          inc causes
+      check causes == run.sim.turnsPlayed
     var config = testConfig(maxTicks = 120)
     let run = runScriptedEpisode(
       config, "", joinSeats = {0'u8, 2'u8})
