@@ -221,6 +221,33 @@ suite "rware pilot and baselines":
       check sim.world.wh.isHighway(park)
       check sim.world.wh.cellX(park) notin [laneLeft, laneRight]
 
+  test "turn 1's default order is courteous's, not hold":
+    ## design.md:169-170 and :400-401: an order that does not validate is
+    ## repaired to the seat's previous order, and "turn 1's default is
+    ## `courteous`'s order" -- the pilot always has an order: this turn's, else
+    ## last turn's, else courteous's. A say-only reply on turn 1 is the one
+    ## path that reaches the default, and `hold` there is 20 ticks of a
+    ## 500-tick shift spent standing still.
+    var sim = playingSim()
+    let wh = sim.world.wh
+    for seat in 0 ..< SeatCount:
+      var probe = sim
+      let sayOnly = parseRobotDirective(
+        parseJson("""{"say":"reading the board"}"""),
+        probe.directives[seat], wh, probe.world.requestQueue)
+      check not sayOnly.order.fromReply
+      check not probe.haveDirective[seat]
+      probe.applyOrders(seat, sayOnly)
+      let want = courteousDirective(sim, seat).order
+      check probe.directives[seat].order.kind == want.kind
+      check probe.directives[seat].order.shelf == want.shelf
+      check probe.directives[seat].order.station == want.station
+      ## and a say-only reply on a LATER turn still keeps the standing order
+      probe.setOrder(seat, okDeliver, station = 1)
+      probe.applyOrders(seat, sayOnly)
+      check probe.directives[seat].order.kind == okDeliver
+      check probe.directives[seat].order.station == 1
+
   test "a credited deliver finishes and gets off the pad":
     ## design.md:609 -- `deliver W` finishes with `done` on credit -- and
     ## :622-625 -- a finished order leaves the robot idle, and an idle robot

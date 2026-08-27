@@ -10,10 +10,10 @@
 ##   9. hash      10. end
 
 import sim_types, sim_config, upstream, warehouse, robots, jam, events,
-  directives, sim_state, pilot
+  directives, sim_state, pilot, baselines
 
 export sim_types, sim_config, upstream, warehouse, robots, jam, events,
-  directives, sim_state, pilot
+  directives, sim_state, pilot, baselines
 
 proc applyOrders*(sim: var SimServer, seat: int, directive: RobotDirective) =
   ## Installs one seat's directive. A seat whose reply carried no `verb` keeps
@@ -22,8 +22,15 @@ proc applyOrders*(sim: var SimServer, seat: int, directive: RobotDirective) =
     return
   let previous = sim.directives[seat].order
   var next = directive
-  if not next.order.fromReply and sim.haveDirective[seat]:
-    next.order = previous
+  if not next.order.fromReply:
+    if sim.haveDirective[seat]:
+      next.order = previous
+    else:
+      ## Turn 1, and the reply named no verb. The default is NOT `hold`: the
+      ## note's ladder is "this turn's, else last turn's, else COURTEOUS's"
+      ## (design.md:169-170, :400-401), and a robot standing still through the
+      ## opening turn is 20 ticks of a 500-tick shift spent not fetching.
+      next.order = courteousDirective(sim, seat).order
   sim.directives[seat] = next
   sim.haveDirective[seat] = true
   if seat < sim.world.robots.len:
