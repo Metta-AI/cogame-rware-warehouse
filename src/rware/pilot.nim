@@ -181,8 +181,11 @@ proc chooseAction*(sim: SimServer, seat: int): PilotStep =
     elif order.kind == okFetch and goal < 0:
       result.outcome = orShelfGone
 
-  if result.outcome != orRunning or order.kind == okHold:
+  if result.outcome != orRunning:
     ## Idle: park on the nearest aisle cell outside the queue lane and hold.
+    ## `hold` is NOT idle -- it is a standing order to stand still, so it never
+    ## reaches here: it keeps its `orRunning` outcome, has no goal cell, and
+    ## falls through to the `goal < 0` return below as NOOP, every tick.
     let park = parkCell(sim, seat)
     if park < 0 or robot.cell == park:
       return

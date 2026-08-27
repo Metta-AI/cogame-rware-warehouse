@@ -221,6 +221,28 @@ suite "rware pilot and baselines":
       check sim.world.wh.isHighway(park)
       check sim.world.wh.cellX(park) notin [laneLeft, laneRight]
 
+  test "hold stands still, wherever the robot is standing":
+    ## `hold` is NOOP every tick and never finishes: a driver that says "hold"
+    ## in a jam standoff must not have its robot drive to a park cell instead.
+    var sim = emptyBoard()
+    sim.clearShelves()
+    let
+      laneLeft = sim.world.wh.width div 2 - 1
+      onStorage = sim.place(1, 1, DirUp)
+      inQueueLane = sim.place(laneLeft, sim.world.wh.height - 2, DirUp)
+    for slot in [onStorage, inQueueLane]:
+      sim.setOrder(slot, okHold)
+      ## the park cell is somewhere else, so a park-driven `hold` would move
+      check parkCell(sim, slot) != sim.world.robots[slot].cell
+      for tick in 0 ..< 4:
+        let step = chooseAction(sim, slot)
+        check step.action == ActionNoop
+        check step.outcome == orRunning
+        sim.forceActions([ActionNoop, ActionNoop])
+      check sim.world.robots[slot].cell ==
+        (if slot == onStorage: sim.cellOf(1, 1)
+         else: sim.cellOf(laneLeft, sim.world.wh.height - 2))
+
   test "an order that finishes reports honestly":
     ## `last_order_result` is the pilot's report of WHY the previous order
     ## ended, which is what lets a seat recover from a race with an unseen
