@@ -29,8 +29,8 @@ const
     ## the transport, and the throttle itself is named in `detail` -- rather
     ## than as an eighth cause the readers do not know.
 
-  RateWindowSeconds = 60
-  RateWindowLimit = 28
+  RateWindowSeconds* = 60
+  RateWindowLimit* = 28
     ## The sidecar caps 30 requests/minute PER EPISODE. `turnSpacingMs` pins
     ## the steady state at 4 seats x 60/12 = 20 req/min, but a turn in which
     ## every seat retries issues 8. The rolling counter is the guard: a seat
@@ -257,6 +257,13 @@ proc recentRequests(engine: var DecisionEngine): int =
   engine.requestTimes = kept
   kept.len
 
+proc rateRoom*(engine: var DecisionEngine): int =
+  ## How many more requests the rolling 60 s window has room for before the
+  ## note's limit of `RateWindowLimit`. Consulted before EVERY batch -- attempt
+  ## 1 and the retry -- because the bound is on requests in the window, not on
+  ## first attempts (design.md:376-380).
+  max(0, RateWindowLimit - engine.recentRequests())
+
 proc turn*(
   engine: var DecisionEngine,
   sim: var SimServer,
@@ -290,7 +297,7 @@ proc turn*(
 
   # --- which seats need a call? --------------------------------------------
   var open: seq[int]
-  var rateBudget = max(0, RateWindowLimit - engine.recentRequests())
+  var rateBudget = engine.rateRoom()
   for seat in 0 ..< sim.seats():
     engine.lastView[seat] = engine.seatView(sim, seat, includeNotes = false)
     if engine.seats[seat].isLlm and not engine.llmOff and
@@ -351,6 +358,29 @@ proc turn*(
           turnIndex, seat, attempt + 1, "timeout",
           "per-turn budget exhausted before attempt " & $(attempt + 1)))
       break
+    if attempt > 0:
+      ## THE RATE GUARD APPLIES TO EVERY BATCH, the retry batch included: the
+      ## note's bound is on requests in the trailing 60 s
+      ## (design.md:376-380), and the retry batch is a batch. Seats that would
+      ## push the window over the limit skip the retry and take the courteous
+      ## order for this turn, exactly as a seat skipped at attempt 1 does.
+      var room = engine.rateRoom()
+      var retryable: seq[int]
+      for seat in open:
+        if room > 0:
+          retryable.add(seat)
+          dec room
+        else:
+          var directive = fallbackDirective(sim, seat, engine.baselineParams)
+          directive.say = ""
+          sim.applyOrders(seat, directive)
+          result.add(fallbackRecord(turnIndex, seat, 2, "rate_guard",
+            "the retry batch would exceed the rolling 60 s request limit"))
+          echo "rware llm: seat ", seat, " falling back to courteous ",
+            "(rate_guard) on turn ", turnIndex
+      open = retryable
+      if open.len == 0:
+        break
     let deadlineMs =
       if attempt == 0: sim.config.attempt1Ms else: sim.config.retryMs
     var batch: RequestBatch

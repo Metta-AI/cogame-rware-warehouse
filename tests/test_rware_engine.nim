@@ -4,7 +4,7 @@
 ## `runHeadlessEpisode` calls the exact per-frame proc `server.nim` calls, so
 ## the test and production can never run two different loops.
 
-import std/[json, os, sets, strutils, unittest]
+import std/[json, monotimes, os, sets, strutils, times, unittest]
 import helpers
 
 proc resultKeys(text: string): HashSet[string] =
@@ -230,6 +230,34 @@ suite "rware engine":
     tight.turnBudgetMs = 5000
     tight.clampConfig()
     check tight.turnBudgetMs == tight.attempt1Ms + tight.retryMs
+
+  test "the rate guard bounds every batch, not just the first":
+    ## design.md:376-380: "if issuing THE NEXT BATCH would push the trailing-60 s
+    ## count above 28, the seats that would exceed it skip the call for that
+    ## turn". The retry batch is a batch, so the guard is consulted before it
+    ## too -- the seats that would exceed the window take the courteous order
+    ## with `cause = "rate_guard"` instead of retrying.
+    var engine = initDecisionEngine(testConfig())
+    check engine.rateRoom() == 28
+    let now = getMonoTime()
+    for i in 0 ..< 26:
+      engine.requestTimes.add(now)
+    check engine.rateRoom() == 2
+    for i in 0 ..< 4:
+      engine.requestTimes.add(now)
+    check engine.rateRoom() == 0
+    ## stamps older than the window fall out of it
+    engine.requestTimes = @[]
+    for i in 0 ..< 30:
+      engine.requestTimes.add(now - initDuration(seconds = 61))
+    check engine.rateRoom() == 28
+    ## and BOTH batches consult it: attempt 1 when it builds `open`, and the
+    ## retry batch before it is issued
+    let source = stripNimComments(readRepoFile("src/rware/decide.nim"))
+    check source.count("engine.rateRoom()") == 2
+    check "\"rate_guard\"" in source
+    ## the worst case is still bounded: at most one batch per seat per attempt
+    check 2 * SeatCount <= RateWindowLimit
 
   test "every fallback cause is in the note's closed enum":
     ## design.md:397-398 pins `cause` to seven values. A replay reader switches
