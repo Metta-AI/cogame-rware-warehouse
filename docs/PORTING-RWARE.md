@@ -135,6 +135,14 @@ for a reader to discover in a diff.
     `[1, 2, 3, 4, 8, 16]`, so this is a narrowing of an integer ladder, not a
     new kind of control.
 
+15. **`#stage.tiny` toggles at 640 px, not the starter's 620.** The note keeps
+    the starter's `relayout()` verbatim, and the `--hudscale` clamp IS
+    verbatim; only the density threshold moved. Checklist item 11 states
+    "labels hidden under `640px`", and the game block's own CSS comment says
+    the same, so leaving the toggle at 620 left the 621-640 px band as a strip
+    where the plate labels stayed and every comment about them lied.
+    `client/page_script.js` carries the same note at the call site.
+
 ## Not ported
 
 The flattened `(1 + 2*sensor_range)^2` observation vector, `msg_bits`
