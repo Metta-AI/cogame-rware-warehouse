@@ -110,6 +110,25 @@ for a reader to discover in a diff.
     where the plate labels stayed and every comment about them lied.
     `client/page_script.js` carries the same note at the call site.
 
+16. **No `rig_art.nim`: the art is baked in JS at page load, and `global.nim`
+    is a JSON payload module.** The note forks the starter's `rig_art.nim`
+    compositor and bakes the robot chips, the crates and the floor with pixie
+    at install. The starter's compositor exists to feed the Bitworld SPRITE
+    PROTOCOL -- a binary sprite stream with server-side pools. This port's wire
+    is one UTF-8 JSON state object per frame over an integer cell grid
+    (`global.nim` emits `robotsJson`/`shelvesJson`/`requestsJson` in cell space
+    and keeps the pool bases as constants), so there is nothing server-side to
+    composite into and a pixie dependency would have to be carried into the
+    wasm build for nothing.
+
+    The OUTCOME the note describes is produced, from the same byte-for-byte
+    starter assets: `client/broadcast_core.js` bakes 96 robot chips (three
+    sizes x four facings x loaded/empty, `bakeRobotChips`), the tinted crates
+    (`bakeCrates`) and the tiled, 18 %-darkened floor with its chalk aisles and
+    workstation pads (`bakeFloor`) once at load, so a frame is blits. It is the
+    same file in the native page and in the Worker, so the two delivery modes
+    cannot drift.
+
 Everything not listed above is upstream's, and `tests/test_rware_upstream.nim`,
 `tests/test_rware_layout.nim` and `tests/test_rware_determinism.nim` are what
 keep it that way.
