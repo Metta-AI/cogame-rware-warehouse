@@ -161,6 +161,43 @@ suite "rware engine":
       check "\"warehouse\"" in text
       check "\"sensor_range\"" in text
 
+  test "the retry always fits inside the turn budget":
+    ## design.md:164-165 promises every failed seat ONE retry, and the budget
+    ## is checked before each attempt -- so `turnBudgetMs` has to hold
+    ## `attempt1Ms + retryMs`, and it is measured from the BATCH START, not
+    ## from the top of the turn: `turnSpacingMs` is time deliberately spent
+    ## not calling the provider, and counting it against the budget spent
+    ## 8-9 s of 14 s waiting and then skipped the retry.
+    let shipped = defaultGameConfig()
+    check shipped.attempt1Ms + shipped.retryMs <= shipped.turnBudgetMs
+    ## every shipped variant and the certification fixture, through the same
+    ## loader the platform uses
+    let manifest = manifestJson()
+    var configs = @[("certification", manifest["certification"]["game_config"])]
+    for variant in manifest["variants"]:
+      configs.add((variant["id"].getStr(), variant["game_config"]))
+    for (name, node) in configs:
+      var config = defaultGameConfig()
+      config.update($node)
+      checkpoint(name)
+      check config.attempt1Ms + config.retryMs <= config.turnBudgetMs
+      check config.wallClockBudgetSeconds <= 660
+      ## every LLM-bearing variant settles inside its own engine stop even if
+      ## every turn burns the whole budget. The certification fixture is
+      ## deliberately shorter (240 s, no API key, every seat scripted): there
+      ## the budget guard settles the episode early and it still ends
+      ## `complete`, which "budget guard settles early" asserts.
+      if name != "certification":
+        let turns = config.maxTicks div config.turnTicks
+        let worstSeconds =
+          turns * max(config.turnSpacingMs, config.turnBudgetMs) div 1000
+        check worstSeconds <= config.wallClockBudgetSeconds
+    ## a budget too small for the ladder is repaired upward, not accepted
+    var tight = defaultGameConfig()
+    tight.turnBudgetMs = 5000
+    tight.clampConfig()
+    check tight.turnBudgetMs == tight.attempt1Ms + tight.retryMs
+
   test "every fallback cause is in the note's closed enum":
     ## design.md:397-398 pins `cause` to seven values. A replay reader switches
     ## on that set, so an eighth cause -- a provider 429 reported as

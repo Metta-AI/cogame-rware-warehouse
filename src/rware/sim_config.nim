@@ -60,6 +60,15 @@ proc clampConfig*(config: var GameConfig) =
   config.turnSpacingMs = max(0, min(60000, config.turnSpacingMs))
   config.attempt1Ms = max(1000, min(30000, config.attempt1Ms))
   config.retryMs = max(1000, min(30000, config.retryMs))
+  ## The turn budget must hold the WHOLE request ladder -- attempt 1 plus the
+  ## single retry the note promises -- because the budget is checked before
+  ## each attempt: a budget under `attempt1Ms + retryMs` silently converts a
+  ## timed-out first attempt into a fallback with no retry. Repaired upward,
+  ## never rejected (the starter's rule). A budget of 0 means "no ladder at
+  ## all" and is left alone.
+  if config.turnBudgetMs > 0:
+    config.turnBudgetMs =
+      max(config.turnBudgetMs, config.attempt1Ms + config.retryMs)
   config.wallClockBudgetSeconds =
     max(10, min(660, config.wallClockBudgetSeconds))
   config.lobbyJoinTimeoutTicks = max(1, config.lobbyJoinTimeoutTicks)

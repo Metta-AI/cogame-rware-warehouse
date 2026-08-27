@@ -195,7 +195,7 @@
         },
         "turnBudgetMs": {
           "type": "integer",
-          "description": "Monotonic deadline around a whole command turn.",
+          "description": "Monotonic deadline around a whole command turn, measured from the batch start; raised to attempt1Ms + retryMs when smaller so the retry always fits.",
           "default": 14000,
           "minimum": 0,
           "maximum": 60000

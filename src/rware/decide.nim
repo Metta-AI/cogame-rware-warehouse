@@ -265,9 +265,15 @@ proc turn*(
   ## Runs ONE decision turn and installs each seat's directive. Returns the
   ## replay chat records this turn produced. Never raises: every failure path
   ## ends in a legal order.
-  let
-    budget = initDuration(milliseconds = max(1, sim.config.turnBudgetMs))
-    turnStart = getMonoTime()
+  let budget = initDuration(milliseconds = max(1, sim.config.turnBudgetMs))
+  var turnStart = getMonoTime()
+    ## Re-taken at the BATCH START below. `turnBudgetMs` is the budget for the
+    ## request ladder -- attempt 1 (`attempt1Ms`) plus the one retry
+    ## (`retryMs`) -- and `turnSpacingMs` is a floor on the gap between batch
+    ## starts, i.e. time spent NOT calling the provider. Measuring the budget
+    ## across the spacing sleep spent 8-9 s of a 14 s budget waiting and then
+    ## skipped the retry the note promises (design.md:164-165), which is the
+    ## one thing the budget exists to protect.
   sim.turnIndex = turnIndex
   sim.refreshSeatMemory()
   engine.client.throttled = false
@@ -326,6 +332,13 @@ proc turn*(
   if open.len > 0:
     engine.lastBatchStart = getMonoTime()
     engine.batchStarted = true
+    ## The turn budget runs from HERE, the batch start, so the whole ladder
+    ## fits inside it: attempt1Ms 9 s + retryMs 4 s = 13 s < turnBudgetMs 14 s
+    ## (`sim_config.clampConfig` repairs any non-zero budget up to that sum).
+    ## Worst case per turn is therefore max(turnSpacingMs, turnBudgetMs) = 14 s
+    ## -- the note's own arithmetic (design.md:361: 25 turns x max(12, 14) =
+    ## 350 s), still inside the 660 s engine stop and the 720 s target.
+    turnStart = engine.lastBatchStart
 
   # --- up to two PARALLEL batches ------------------------------------------
   var attempt = 0
