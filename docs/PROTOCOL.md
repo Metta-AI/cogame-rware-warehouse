@@ -158,17 +158,18 @@ seat, the attempt and a `cause` from exactly this set:
 | `cause` | The turn fell back because |
 |---|---|
 | `timeout` | the per-turn budget was exhausted before this attempt could start |
-| `transport_error` | the request failed at the transport (connection, TLS, non-timeout curl error) |
+| `transport_error` | the request failed at the transport (connection, TLS, a non-timeout curl error, or a provider 429 — the retry batch is then skipped and the 429 is named in `detail`) |
 | `parse_error` | a reply arrived and was not a usable order after the retry |
-| `throttled` | the provider answered 429 and no other candidate model was left, so the retry batch is skipped |
 | `rate_guard` | issuing this batch would push the trailing-60 s request count over 28, the sidecar's 30/min cap |
 | `no_credentials` | no API key (or the provider rejected it), so the LLM leg is off |
 | `budget_guard` | two more turns would not fit the wall-clock budget; the rest of the episode plays scripted |
 | `disconnected` | the seat never joined, so nobody is issuing orders for that robot |
 
-`throttled` is a divergence from the design note's enum, which folded 429 into
-`transport_error`; it is kept separate because a throttled episode and a broken
-one need different answers.
+The set is **closed** — `src/rware/decide.nim`'s `FallbackCauses`, which is the
+design note's enum exactly, and `tests/test_rware_engine.nim` asserts no other
+cause reaches a replay. A throttled episode and a broken transport are still
+distinguishable: the 429 is written verbatim into the record's `detail`, and the
+game log carries `provider throttled with no other candidate`.
 
 **Every string that lands in the replay** — `say`, `notes`, the policy label,
 `stopDetail`, recorded error text — is truncated on **rune** boundaries. Byte

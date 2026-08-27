@@ -161,6 +161,33 @@ suite "rware engine":
       check "\"warehouse\"" in text
       check "\"sensor_range\"" in text
 
+  test "every fallback cause is in the note's closed enum":
+    ## design.md:397-398 pins `cause` to seven values. A replay reader switches
+    ## on that set, so an eighth cause -- a provider 429 reported as
+    ## "throttled", say -- is a silently unhandled branch downstream.
+    check FallbackCauses == ["timeout", "parse_error", "transport_error",
+      "no_credentials", "rate_guard", "budget_guard", "disconnected"]
+    ## no cause literal in the decision layer outside that set
+    let source = stripNimComments(readRepoFile("src/rware/decide.nim"))
+    check "\"throttled\"" notin source
+    ## and every cause a real episode writes is one of the seven
+    var config = testConfig(maxTicks = 120)
+    var engine = scriptedEngine(config)
+    engine.seats[0].isLlm = true
+    engine.seats[0].prompt = "a prompt, so the seat is an LLM seat"
+    let run = runHeadlessEpisode(config, engine, "", joinSeats = {0'u8, 2'u8})
+    var seen: HashSet[string]
+    for record in parseReplayBytes(run.bytes).chats:
+      let node = parseJson(record.text)
+      if node{"k"}.getStr() != "fallback":
+        continue
+      let cause = node{"cause"}.getStr()
+      seen.incl(cause)
+      if cause notin FallbackCauses:
+        checkpoint("fallback cause outside the enum: " & cause)
+        fail()
+    check seen.len > 0
+
   test "the driver is handed the floor plan":
     ## The note's first visible fact: the whole floor plan, `#` storage slot,
     ## `.` aisle, `W` workstation -- the vocabulary the system prompt uses. It

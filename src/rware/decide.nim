@@ -19,6 +19,16 @@ import curly
 import sim, baselines, llm
 
 const
+  FallbackCauses* = ["timeout", "parse_error", "transport_error",
+                     "no_credentials", "rate_guard", "budget_guard",
+                     "disconnected"]
+    ## The design note's CLOSED cause enum (design.md:397-398). Every
+    ## `fallback` record this module writes carries one of these seven and
+    ## nothing else, so a replay reader can switch on the set exhaustively.
+    ## A provider 429 is reported as `transport_error` -- it is a refusal at
+    ## the transport, and the throttle itself is named in `detail` -- rather
+    ## than as an eighth cause the readers do not know.
+
   RateWindowSeconds = 60
   RateWindowLimit = 28
     ## The sidecar caps 30 requests/minute PER EPISODE. `turnSpacingMs` pins
@@ -365,7 +375,8 @@ proc turn*(
           cause = (if "timeout" in responses[position].error.toLowerAscii():
                      "timeout" else: "transport_error")
         elif error.msg.startsWith("llm throttled"):
-          cause = "throttled"
+          ## a provider 429: a refusal at the transport, named in `detail`
+          cause = "transport_error"
         result.add(fallbackRecord(
           turnIndex, seat, attempt + 1, cause, error.msg))
         echo "rware llm: seat ", seat, " attempt ", attempt + 1,
@@ -389,7 +400,7 @@ proc turn*(
       if engine.client.disabled or engine.client.transport == ltNone:
         "no_credentials"
       elif engine.llmOff: "budget_guard"
-      elif engine.client.throttled: "throttled"
+      elif engine.client.throttled: "transport_error"
       else: "parse_error"
     result.add(fallbackRecord(turnIndex, seat, 2, cause,
       "seat fell back to the courteous order"))
