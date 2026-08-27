@@ -597,7 +597,7 @@
   ro.observe(viewport);
   window.addEventListener('resize', relayout);
 
-  // The context the appended MAGENT-BATTLE block reads the inherited chrome
+  // The context the appended rware-warehouse block reads the inherited chrome
   // through. Declared here (hoisted `var`, so onFrame sees it however early
   // the first frame lands) rather than duplicating any of it: the game block
   // must not re-implement naming, escaping, feed insertion or the transport.

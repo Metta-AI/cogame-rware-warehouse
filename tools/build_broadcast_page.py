@@ -4,7 +4,7 @@
 This script IS the provenance record for the fork. It takes the starter's
 page byte for byte, deletes exactly the elements and CSS rules the design note
 lists as removed, swaps the page IIFE for the rware-warehouse fork of it, and
-appends the MAGENT-BATTLE game block under its banner comment. Re-running it
+appends the rware-warehouse game block under its banner comment. Re-running it
 against the same starter reproduces the committed file, so a reviewer can see
 what was changed rather than diffing 4,700 lines of rewritten page.
 
@@ -21,8 +21,9 @@ import re
 import sys
 
 # Exactly the selectors the design note removes: all of #viewpanel (the board
-# is a fixed 45x45 grid with a 1:1 aspect and no off-frame area, so zoom and
-# the minimap have nothing to do), the whole first-person PIP, the POV badge,
+# is a fixed 10x11 / 16x11 grid that relayout() fits whole at every width, so
+# there is no off-frame area for zoom or a minimap to reach), the whole
+# first-person PIP, the POV badge,
 # the ctf scorebug internals, the beat kinds this game never emits, and the
 # perk / handicap badges.
 REMOVED_SELECTORS = [
