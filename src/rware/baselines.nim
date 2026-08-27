@@ -124,16 +124,20 @@ proc fetchOrder(
       continue
     if sim.world.shelves[id].carrier >= 0:
       continue
-    let home = sim.world.shelves[id].cell
-    var cost = pathCost(sim, seat, home)
+    let standing = sim.world.shelves[id].cell
+      ## where the shelf IS, which is its home until somebody re-stows it --
+      ## the same cell `pilot.shelfGoal` steers a `fetch` to
+      ## (vendor/PATCHES.md divergence 12)
+    var cost = pathCost(sim, seat, standing)
     if contention:
-      let mine = sim.world.wh.chebyshev(sim.world.robots[seat].cell, home)
+      let mine = sim.world.wh.chebyshev(sim.world.robots[seat].cell, standing)
       for other in 0 ..< sim.world.robots.len:
         if other == seat:
           continue
         if not sim.world.visibleTo(seat, sim.world.robots[other].cell):
           continue
-        if sim.world.wh.chebyshev(sim.world.robots[other].cell, home) < mine:
+        if sim.world.wh.chebyshev(sim.world.robots[other].cell, standing) <
+            mine:
           cost += params.penalty
           break
     if result.kind == okHold or cost < best:

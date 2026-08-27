@@ -59,6 +59,17 @@ place.
     `tests/test_rware_requests.nim` asserts it by replaying the same seed with
     different seat behaviour and comparing the two request sequences.
 
+12. **`fetch` steers to the shelf's CURRENT standing cell, not its home
+    cell.** The note names the home cell. A shelf that has been delivered and
+    then stowed somewhere else is no longer at home, and a `fetch` aimed at the
+    empty home cell would report `shelf_gone` for as long as that shelf stays
+    re-stowed -- permanently, for a shelf the request board keeps drawing. The
+    two cells differ only after somebody moves a shelf; for a carried shelf,
+    which has no standing cell, the goal falls back to its home. The
+    observation still advertises the home cell (`decide.nim:93`), which is the
+    static warehouse fact the note wants a driver to plan from.
+    `docs/RULES.md` states the shipped rule.
+
 Everything not listed above is upstream's, and `tests/test_rware_upstream.nim`,
 `tests/test_rware_layout.nim` and `tests/test_rware_determinism.nim` are what
 keep it that way.
