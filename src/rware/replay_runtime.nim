@@ -149,6 +149,12 @@ proc scanReplay(player: var ReplayPlayer, config: GameConfig) =
         label: shelfLabel(mark.shelf) & " delivered to " &
           stationLabel(mark.station) & " - " & $sim.teamDelivered() &
           " so far"))
+    ## Clear first: a jam whose membership changed closes its span and opens a
+    ## new one on the SAME frame, so a scrubber never shows two overlapping
+    ## jam spans and never loses the marker for the jam that is still running.
+    if sim.jamCleared and jamOpen >= 0:
+      player.jamSpans.add([jamOpen, frame])
+      jamOpen = -1
     if sim.jamStarted and jamOpen < 0:
       jamOpen = frame
       var who: seq[string]
@@ -157,9 +163,6 @@ proc scanReplay(player: var ReplayPlayer, config: GameConfig) =
       player.beats.add(Beat(
         tick: frame, kind: "jam", side: "",
         label: "Jam - " & who.join(" and ")))
-    if sim.jamCleared and jamOpen >= 0:
-      player.jamSpans.add([jamOpen, frame])
-      jamOpen = -1
     if frame - lastEventFrame >= LullTicks:
       if player.lulls.len > 0 and player.lulls[^1][1] >= lastEventFrame:
         player.lulls[^1][1] = frame

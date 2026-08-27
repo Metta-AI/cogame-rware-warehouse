@@ -8,6 +8,7 @@
 ##
 ## PURE INTEGER (see warehouse.nim).
 
+import std/algorithm
 import robots
 
 type
@@ -71,9 +72,12 @@ proc detectJam*(
     if a != b:
       parent[min(a, b)] = min(a, b)
       parent[max(a, b)] = min(a, b)
-  # The largest linked group, tie-broken toward the lowest member slot.
-  var
-    best: seq[int] = @[]
+  # EVERY linked group of at least two, unioned, in ascending slot order. The
+  # note defines a jam as "the set of robots with stuck >= jamTicks that are
+  # linked by the blocking relation, closed transitively, with at least 2
+  # members" -- four seats can hold two disjoint 2-robot standoffs at once, and
+  # reporting only one of them hides half the deadlock from the flag, the
+  # count, the hash and the viewer.
   for root in 0 ..< count:
     if not eligible[root] or not linked[root] or find(parent, root) != root:
       continue
@@ -81,9 +85,10 @@ proc detectJam*(
     for slot in 0 ..< count:
       if eligible[slot] and linked[slot] and find(parent, slot) == root:
         group.add(slot)
-    if group.len >= 2 and group.len > best.len:
-      best = group
-  best
+    if group.len >= 2:
+      for slot in group:
+        result.add(slot)
+  sort(result)
 
 proc updateJam*(
   state: var JamState, members: seq[int], tick: int
@@ -92,12 +97,18 @@ proc updateJam*(
   ## transitions the feed, the beats and the events all read from one place.
   result = (false, false, 0)
   if members.len >= 2:
+    if state.active and not sameMembers(state.members, members):
+      ## The jam the feed, the beats and the events are showing is not this
+      ## jam: different robots are in it. Close the old one FIRST -- a `jam`
+      ## beat that follows a `jam` beat with no `jamclear` between them leaves
+      ## a reader with an unbalanced pair -- and open the new one below.
+      state.active = false
+      result.cleared = true
+      result.clearedTicks = tick - state.startedTick
     if not state.active:
       state.active = true
       state.startedTick = tick
       inc state.count
-      result.started = true
-    elif not sameMembers(state.members, members):
       result.started = true
     state.members = members
     inc state.ticksTotal

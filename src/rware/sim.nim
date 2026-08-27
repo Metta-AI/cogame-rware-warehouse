@@ -349,10 +349,13 @@ proc resolveTick*(sim: var SimServer, steps: seq[PilotStep]) =
   sim.jamStarted = transition.started
   sim.jamCleared = transition.cleared
   sim.jamClearedTicks = transition.clearedTicks
-  if transition.started:
-    sim.emitEvent(Jam, amount = members.len)
+  ## CLEAR FIRST: a membership change closes the jam that was being shown and
+  ## opens a new one on the same tick, and the pair has to read
+  ## jam -> jamclear -> jam rather than jam -> jam.
   if transition.cleared:
     sim.emitEvent(JamClear, amount = transition.clearedTicks)
+  if transition.started:
+    sim.emitEvent(Jam, amount = members.len)
 
   # --- the per-seat sensor memory the pilot plans on ------------------------
   for slot in 0 ..< count:

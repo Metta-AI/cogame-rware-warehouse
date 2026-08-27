@@ -321,6 +321,39 @@ suite "rware sim":
       check not lone.jamState.active
       check lone.jamState.count == 0
 
+  test "two disjoint standoffs are one jam, and a change of members clears":
+    ## The note's jam is "the set of robots with stuck >= jamTicks linked by
+    ## the blocking relation, closed transitively, with at least 2 members" --
+    ## four seats can hold TWO disjoint 2-robot standoffs, and reporting only
+    ## the largest hides half the deadlock from the flag, the count, the hash
+    ## and the viewer.
+    var sim = emptyBoard()
+    sim.clearShelves()
+    let
+      a = sim.place(1, 3, DirDown)
+      b = sim.place(1, 4, DirUp)
+      c = sim.place(7, 3, DirDown)
+      d = sim.place(7, 4, DirUp)
+    let forward = [ActionForward, ActionForward, ActionForward, ActionForward]
+    for tick in 1 .. 8:
+      sim.forceActions(forward)
+    check sim.jamState.active
+    check sim.jamState.members == @[a, b, c, d]
+    check sim.jamState.count == 1
+    ## one pair turns away: the jam that was being shown is not this jam, so
+    ## it CLEARS and the remaining pair opens a new one on the same tick
+    sim.forceActions([ActionForward, ActionForward, ActionRight, ActionRight])
+    check sim.jamCleared
+    check sim.jamStarted
+    check sim.jamState.active
+    check sim.jamState.members == @[a, b]
+    check sim.jamState.count == 2
+    ## and when the last pair turns away there is no jam left at all
+    sim.forceActions([ActionRight, ActionRight, ActionNoop, ActionNoop])
+    check not sim.jamState.active
+    check sim.jamCleared
+    check not sim.jamStarted
+
   test "scoring":
     ## 12. scores[s] == 100*teamDelivered + delivered[s] over 500 randomised
     ##     end states, always >= 0, delivered[s] < 100 always (the

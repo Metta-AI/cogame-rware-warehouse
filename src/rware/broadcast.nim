@@ -51,6 +51,11 @@ proc stepEvents*(
       "k": "stow", "slot": mark.slot, "shelf": shelfLabel(mark.shelf),
       "cell": [sim.world.wh.cellX(sim.world.shelves[mark.shelf].cell),
                sim.world.wh.cellY(sim.world.shelves[mark.shelf].cell)]})
+  ## A jam whose MEMBERSHIP changed closes and reopens on the same tick, so
+  ## the clear comes first and the feed reads jam -> jamclear -> jam.
+  if sim.jamCleared:
+    result.add(%*{
+      "k": "jamclear", "slots": newJArray(), "ticks": sim.jamClearedTicks})
   if sim.jamStarted:
     var slots = newJArray()
     var cells = newJArray()
@@ -60,9 +65,6 @@ proc stepEvents*(
         sim.world.wh.cellY(sim.world.robots[slot].cell)])
     result.add(%*{
       "k": "jam", "slots": slots, "cells": cells, "tick": sim.tick})
-  if sim.jamCleared:
-    result.add(%*{
-      "k": "jamclear", "slots": newJArray(), "ticks": sim.jamClearedTicks})
   for record in chats:
     if record.text.len == 0 or record.text[0] != '{':
       continue
