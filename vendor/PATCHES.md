@@ -141,6 +141,18 @@ for a reader to discover in a diff.
     `tests/test_rware_viewer.nim` asserts the beat CSS set is exactly
     `{delivery, jam, fallback, end}`.
 
+18. **`game.docs` ships inline `{"type": "text"}` values, not the note's
+    `uri` form.** The note writes the docs block as `uri` references to files
+    in the repo; ACCEPTANCE CHECKLIST item 10 (prompts/30-review-loop.md), the
+    gate a release is judged against, spells it as
+    `{"readme": {"type": "text", "value": ...}, "pages": [{"id", "title",
+    "content": {"type": "text", "value": ...}}]}`. The platform validator
+    accepts either shape; the checklist does not, so the manifest ships
+    `text`. Inlining duplicates files that also live in the tree, so
+    `tools/embed_manifest_docs.py` is the single writer of that block and
+    `tests/test_rware_manifest.nim` asserts the embedded copy equals the file
+    it was embedded from, byte for byte.
+
 Everything not listed above is upstream's, and `tests/test_rware_upstream.nim`,
 `tests/test_rware_layout.nim` and `tests/test_rware_determinism.nim` are what
 keep it that way.
