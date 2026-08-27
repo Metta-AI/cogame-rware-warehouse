@@ -1855,19 +1855,41 @@ button.beat-marker {
 }
 
 /* --- endcard columns and the per-seat rows ------------------------------ */
-.ec-thead, .ec-trow {
+/* ONE fleet panel, not two team panels: this is a cooperative shift, so the
+   inherited .ec-team width (215u, sized for a side-by-side pair) has to hold
+   four robot rows across five columns. Widen it and let the whole card centre
+   the single panel. */
+/* The `#endcard` prefix is not decoration: the inherited rules are
+   `#endcard .ec-thead, #endcard .ec-row`, so an unqualified `.ec-thead` here
+   loses on specificity and the inherited five-column track (sized for K / D /
+   Clstr / Cap) squeezes DELIVERED, STOWED, BLOCKED and JAMS into each other. */
+#endcard .ec-team { width: calc(400 * var(--u)); }
+#endcard .ec-thead,
+#endcard .ec-trow {
   display: grid;
-  grid-template-columns: 1.6fr 0.8fr 0.8fr 0.8fr 0.8fr;
+  grid-template-columns:
+    1fr calc(50 * var(--u)) calc(40 * var(--u)) calc(44 * var(--u))
+    calc(32 * var(--u));
   gap: calc(4 * var(--u));
-  font-size: calc(9 * var(--u));
+  align-items: baseline;
 }
-.ec-thead {
+#endcard .ec-thead span:not(:first-child),
+#endcard .ec-trow span:not(:first-child) { text-align: center; }
+#endcard .ec-trow span:first-child {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#endcard .ec-thead {
   color: var(--paper-dim);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
   margin-top: calc(4 * var(--u));
 }
-.ec-trow { font-variant-numeric: tabular-nums; }
+#endcard .ec-trow {
+  font-variant-numeric: tabular-nums;
+  font-size: calc(9 * var(--u));
+}
 .ec-tname {
   font-family: var(--pixfont);
   font-size: calc(14 * var(--u));
