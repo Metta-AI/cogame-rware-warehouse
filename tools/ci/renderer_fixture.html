@@ -11,11 +11,17 @@
   #report { position: absolute; left: 0; right: 0; bottom: 0; height: 24px;
     line-height: 24px; padding: 0 8px; white-space: nowrap;
     overflow: hidden; background: #0b0704; }
+  /* The board probe is a REAL, laid-out canvas: the strings drawn into it are
+     what viewer_smoke.mjs's canvas-text hook measures. It sits behind the
+     iframe rather than off-screen so nothing about it is degenerate. */
+  #boardprobe { position: absolute; right: 0; top: 0; z-index: -1; }
 </style>
 </head>
 <body>
 <div id="host"></div>
+<canvas id="boardprobe" width="360" height="486"></canvas>
 <div id="report">fixture: booting</div>
+<script src="./broadcast_core.js"></script>
 <script>
 /*
  * The worst-case TEXT fixture.
@@ -128,6 +134,54 @@
 
   var host = document.getElementById('host');
   var report = document.getElementById('report');
+
+  // ---- the BOARD canvas, on the MAIN THREAD ---------------------------------
+  // The shipped bundle transfers the board canvas to a Dedicated Worker
+  // (static_replay.js: transferControlToOffscreen), and viewer_smoke.mjs hooks
+  // window.CanvasRenderingContext2D, which never reaches Worker globals -- so
+  // the bundle's own smoke reports `canvas_text: 0 drawn`, and the checklist
+  // (item 15) says total 0 is evidence of nothing. This fixture therefore runs
+  // THE SAME client/broadcast_core.js -- the shipped renderer, not a
+  // re-implementation -- against a plain main-thread canvas with the same
+  // worst-case frame, at the same widths, so every string the board draws (the
+  // W1/W2 pad labels, the requested-shelf ids over the crates) is drawn where
+  // the instrumentation is and --strict-text-bounds becomes a real gate.
+  var boardCanvas = document.getElementById('boardprobe');
+  var boardCore = null;
+  var boardStrings = 0;
+  (function countBoardStrings() {
+    var proto = window.CanvasRenderingContext2D &&
+      window.CanvasRenderingContext2D.prototype;
+    if (!proto || typeof proto.fillText !== 'function') return;
+    var real = proto.fillText;
+    proto.fillText = function () {
+      boardStrings++;
+      return real.apply(this, arguments);
+    };
+  })();
+
+  function drawBoard(s, width) {
+    var height = Math.round(width * 1.35);
+    if (!boardCore) {
+      if (!window.BroadcastCore || !window.BroadcastCore.create) {
+        fail('client/broadcast_core.js did not load next to the fixture');
+      }
+      boardCore = window.BroadcastCore.create({
+        canvas: boardCanvas, websocket: false,
+        viewportWidth: width, viewportHeight: height, devicePixelRatio: 1
+      });
+    }
+    boardCanvas.style.width = width + 'px';
+    boardCanvas.style.height = height + 'px';
+    boardCore.setViewportSize(width, height, 1);
+    var before = boardStrings;
+    boardCore.ingest(JSON.stringify(s));
+    if (boardStrings <= before) {
+      fail('the board renderer drew no text at ' + width +
+        'px -- the canvas-text bound check would be measuring nothing');
+    }
+  }
+
   var iframe = document.createElement('iframe');
   iframe.src = './index.html?replay=' + encodeURIComponent(replayUrl());
   iframe.width = WIDTHS[0];
@@ -162,6 +216,9 @@
       if (!base || !base.rw) fail('the shipped page has no state frame yet');
       var s = synthetic(base, width);
       w.RwareChrome.frame(s, w.RWARE_CTX, false);
+      // ...and the same frame through the shipped board renderer, here on the
+      // main thread, where the canvas-text hook can see what it draws.
+      drawBoard(s, width);
 
       // What can actually go wrong with DOM text: a row clipped to nothing, or
       // a name collapsed to a bare ellipsis. Both are measured on the REAL
@@ -219,7 +276,8 @@
       }
       checks.push(width + 'px: feed ' + Math.round(box.width) + 'x' +
         Math.round(box.height) + ', name ' +
-        (name ? Math.round(name.getBoundingClientRect().width) : 0) + 'px');
+        (name ? Math.round(name.getBoundingClientRect().width) : 0) +
+        'px, board strings ' + boardStrings);
       driveWidth(index + 1, done);
     }, 400);
   }

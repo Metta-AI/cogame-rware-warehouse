@@ -458,6 +458,18 @@ jobs:
           # sim tick per animation frame at 30 fps
           # (replay_runtime.TicksPerSecondBase), so the CI replay's ~500 frames
           # play for ~16.7 s and 10 s of soak lands mid-play.
+          #
+          # THIS STEP REPORTS `canvas text: 0 drawn`, AND THAT IS EXPECTED
+          # HERE. The shipped shell transfers the board canvas to a Dedicated
+          # Worker (replay-viewer/static_replay.js: transferControlToOffscreen)
+          # and viewer_smoke.mjs hooks window.CanvasRenderingContext2D, which
+          # does not reach Worker globals. Checklist item 15 is explicit that
+          # `total: 0` is evidence of nothing, so the canvas-text bound gate for
+          # this repo is the NEXT-BUT-ONE step, "Worst-case renderer fixture":
+          # it runs the SAME client/broadcast_core.js on a main-thread canvas
+          # with a worst-case frame at 360/620/630/1024 px and fails if the
+          # board renderer drew no strings at all. Read its `canvas text:` line,
+          # not this one.
           node tools/ci/viewer_smoke.mjs \
             --bundle dist/static-replay-viewer \
             --replay "${replay}" \
@@ -473,6 +485,13 @@ jobs:
       # wasm entry -- it does not re-implement the drawing (the particle-worlds
       # 2026-08-26 scar) -- driving the real page with a full-cap 120-rune
       # `say` on both seats at several canvas widths including 360 px.
+      # It also drives the shipped client/broadcast_core.js against a plain
+      # MAIN-THREAD canvas with that same frame, so the board's own strings
+      # (the W1/W2 pad labels, the requested-shelf ids over the crates) are
+      # drawn where viewer_smoke.mjs's canvas-text hook can measure them --
+      # the bundle itself draws them inside a Worker, where the hook cannot
+      # reach. THIS step's `canvas text:` line is the repo's never_inside
+      # gate, and the fixture fails outright if that renderer drew no text.
       # wasm32-only failures (integer traps, a bad free through -d:useMalloc,
       # address-space exhaustion) are invisible to the native shards, and the
       # browser smoke only proves the page draws. Run the EXACT emitted module

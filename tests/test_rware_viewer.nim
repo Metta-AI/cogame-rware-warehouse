@@ -328,6 +328,26 @@ suite "rware viewer":
     check "! grep -q '<script src=\"./rware_replay.js\"></script>'" in
       dockerfile
 
+  test "the renderer fixture measures the board's own canvas text":
+    ## The bundle draws the board inside a Dedicated Worker, where
+    ## viewer_smoke.mjs's CanvasRenderingContext2D hook cannot reach, so that
+    ## step reports `canvas text: 0 drawn` -- which checklist item 15 says is
+    ## evidence of nothing. The fixture therefore drives the SAME shipped
+    ## renderer on a main-thread canvas, and fails if it drew no strings.
+    let fixture = readRepoFile("tools/ci/renderer_fixture.html")
+    check "<script src=\"./broadcast_core.js\"></script>" in fixture
+    check "window.BroadcastCore.create" in fixture
+    check "boardCore.ingest(" in fixture
+    check "the board renderer drew no text at" in fixture
+    ## and the fixture step is the one that carries --strict-text-bounds
+    let ci = readRepoFile(".github/workflows/ci.yml")
+    check "renderer_fixture.html" in ci
+    check "--strict-text-bounds" in ci
+    ## the strings it measures are the ones the renderer actually draws
+    let core = readRepoFile("client/broadcast_core.js")
+    check "fillText('W' + (g + 1)" in core
+    check "fillText(r.id," in core
+
   test "playback outlasts the viewer soak":
     ## ecos 2026-08-23: a replay shorter than the soak window legitimately ends
     ## mid-soak and the harness reports a frozen viewer. One sim tick per
