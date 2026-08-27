@@ -310,9 +310,16 @@ proc resolveTick*(sim: var SimServer, steps: seq[PilotStep]) =
       amount = sim.world.teamDelivered)
     ## Remove from the board and refill that queue slot with a shelf drawn by
     ## the REQUEST stream -- a pure function of (seed, deliveries so far).
-    sim.world.requested[shelfHere] = false
+    ##
+    ## The draw comes FIRST, exactly as upstream orders it
+    ## (warehouse.py:915-917: `candidates = [s for s in self.shelfs if s not in
+    ## self.request_queue]` is evaluated while the delivered shelf is still in
+    ## the queue). The delivered shelf is therefore not a candidate for its own
+    ## replacement, and the candidate set has upstream's cardinality on every
+    ## refill rather than one more.
     let replacement = sim.world.refillDraw(sim.config.seed, sim.refillDraws)
     inc sim.refillDraws
+    sim.world.requested[shelfHere] = false
     for k in 0 ..< sim.world.requestQueue.len:
       if sim.world.requestQueue[k] == shelfHere:
         if replacement >= 0:

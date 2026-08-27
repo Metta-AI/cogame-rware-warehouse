@@ -88,6 +88,42 @@ suite "rware request stream":
       check flagged == sim.world.requestQueue.len
       sim.deliverAt(k mod 2, 0)
 
+  test "the refill draws from upstream's candidate set":
+    ## warehouse.py:915-917 evaluates `candidates = [s for s in self.shelfs if
+    ## s not in self.request_queue]` BEFORE the delivered shelf's queue entry
+    ## is replaced, so the shelf just delivered is not a candidate for its own
+    ## replacement and the candidate set is exactly
+    ## `shelves - requestQueue` at every refill. Transcribed here and compared
+    ## against what the port actually draws.
+    for seed in [7, 42, 99]:
+      var sim = initSimServer(testConfig(seed = seed))
+      sim.applyGameStart()
+      for k in 0 ..< 25:
+        let
+          delivered = sim.world.requestQueue[0]
+          before = sim.world.requestQueue
+        ## upstream's candidate list, in ascending shelf id, taken BEFORE the
+        ## queue entry is replaced
+        var candidates: seq[int]
+        for id in 0 ..< sim.world.shelves.len:
+          if id notin before:
+            candidates.add(id)
+        let want = candidates[
+          streamDraw(seed, StreamRequest, k, candidates.len)]
+        sim.deliverAt(0, 0)
+        check sim.world.teamDelivered == k + 1
+        check delivered notin sim.world.requestQueue
+        check sim.world.requestQueue[0] == want
+        check sim.world.requested[want]
+        ## stow the delivered shelf back on its home slot, so the pad is clear
+        ## for the next delivery
+        let carried = sim.world.robots[0].carrying
+        if carried >= 0:
+          sim.world.robots[0].carrying = -1
+          sim.world.shelves[carried].carrier = -1
+          sim.world.shelves[carried].cell = sim.world.shelves[carried].home
+          sim.world.rebuildLayers()
+
   test "the spawn draw is seeded too, and independent of the request stream":
     ## Both streams derive from the seed and neither consumes the other, so
     ## the spawn is a function of the seed alone.
