@@ -150,7 +150,7 @@ proc teamsJson(sim: SimServer): JsonNode =
       "policies": [sim.seatNames[seat]]
     }
 
-proc endcardJson(sim: SimServer): JsonNode =
+proc endcardJson*(sim: SimServer): JsonNode =
   if sim.phase != GameOver:
     return newJNull()
   var rows = newJArray()
@@ -169,7 +169,11 @@ proc endcardJson(sim: SimServer): JsonNode =
     "teamDelivered": sim.teamDelivered(),
     "par": sim.config.parDeliveries,
     "met": sim.fleetWon(),
-    "score": sim.scoreOf(0),
+    # TEAM SCORE, so the shared term and nothing else: `scoreOf(0)` put seat
+    # 0's individual epsilon in a number labelled for the whole fleet. Each
+    # seat's own deliveries are in the rows above it, and the league still
+    # ranks on `results.scores`, which is per seat.
+    "score": sim.teamScore(),
     "jams": sim.jamState.count,
     "jamTicks": sim.jamState.ticksTotal,
     "longestJamTicks": sim.jamState.longestTicks,

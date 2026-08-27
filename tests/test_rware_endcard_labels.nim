@@ -6,8 +6,9 @@
 ## the policy contract. So the re-labelings are enumerated in the design note
 ## and enforced here -- zero forbidden words, and every replacement present.
 
-import std/[strutils, unittest]
+import std/[json, strutils, unittest]
 import helpers
+import rware/broadcast
 
 const
   Forbidden = ["Lives", "LIVES", "Clstr", "Cap<", "flag", "heart", "paint",
@@ -127,3 +128,26 @@ suite "rware endcard labels":
     let core = readRepoFile("client/broadcast_core.js")
     check "seat.name" notin core
     check "roster" notin core
+
+  test "TEAM SCORE is the team's score":
+    ## `scores[s] = 100 * teamDelivered + delivered[s]`, and the first term is
+    ## identical for all four seats -- that shared term IS the team's score.
+    ## The endcard headline used `scoreOf(0)`, which carries seat 0's
+    ## individual epsilon in a number labelled for the whole fleet.
+    var config = testConfig(maxTicks = 200)
+    let run = runScriptedEpisode(config)
+    check run.sim.teamDelivered() > 0
+    check run.sim.teamScore() == 100 * run.sim.teamDelivered()
+    for seat in 0 ..< SeatCount:
+      check run.sim.scoreOf(seat) ==
+        run.sim.teamScore() + run.sim.deliveredBy(seat)
+    ## at least one seat delivered something, so seat 0's score and the team
+    ## score are genuinely different numbers for this episode
+    var individual = 0
+    for seat in 0 ..< SeatCount:
+      individual += run.sim.deliveredBy(seat)
+    check individual > 0
+    ## and the endcard the viewer renders carries the team number
+    let endcard = endcardJson(run.sim)
+    check endcard["score"].getInt() == run.sim.teamScore()
+    check endcard["teamDelivered"].getInt() == run.sim.teamDelivered()

@@ -71,12 +71,22 @@ proc blockedBy*(sim: SimServer, seat: int): int {.inline.} =
 proc teamDelivered*(sim: SimServer): int {.inline.} =
   sim.world.teamDelivered
 
+const TeamScoreWeight* = 100
+  ## The weight on the SHARED term of `scoreOf`. Every seat carries it
+  ## identically -- it is the whole cooperative game -- and a seat's own
+  ## deliveries are the epsilon tie-break under it.
+
+proc teamScore*(sim: SimServer): int {.inline.} =
+  ## The team's score: the shared term of every seat's score, with no seat's
+  ## individual epsilon in it. This is the number the endcard headlines.
+  TeamScoreWeight * sim.world.teamDelivered
+
 proc scoreOf*(sim: SimServer, seat: int): int =
   ## `100 * teamDelivered + delivered[seat]`. Higher is better, never negative:
   ## the fleet's throughput is the whole game and a seat's own count is an
   ## epsilon tie-break (a full round trip is >= 12 ticks, so
   ## `delivered[s] <= 500/12 = 41 < 100` and the ordering stays lexicographic).
-  100 * sim.world.teamDelivered + sim.deliveredBy(seat)
+  sim.teamScore() + sim.deliveredBy(seat)
 
 proc fleetWon*(sim: SimServer): bool {.inline.} =
   sim.world.teamDelivered >= sim.config.parDeliveries
