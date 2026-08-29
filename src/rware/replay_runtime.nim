@@ -19,6 +19,13 @@ const
     ## replay (the ecos 2026-08-23 scar).
   LullTicks* = 40
     ## A lull is this many consecutive ticks with no load, deliver, stow or jam.
+  ReplayHalfSpeedIndex* = -1
+    ## The half-speed chip's `speedIndex`, a SENTINEL rather than a
+    ## `PlaybackSpeeds` entry: index 0 stays 1x -- the speed every replay opens
+    ## at -- and the whole-number multipliers keep their '1'/'2'/'4'/'8'
+    ## command chars. Half speed needs no new arithmetic either: the
+    ## accumulator in `advanceReplayFrame` is already a rate over `TargetFps`,
+    ## so adding half a frame's worth lands one sim tick every OTHER frame.
 
 type
   Beat* = object
@@ -59,6 +66,14 @@ type
 
 proc playbackSpeed*(player: ReplayPlayer): int =
   PlaybackSpeeds[clamp(player.speedIndex, 0, PlaybackSpeeds.high)]
+
+proc halfSpeed*(player: ReplayPlayer): bool =
+  player.speedIndex == ReplayHalfSpeedIndex
+
+proc replayDisplaySpeed*(player: ReplayPlayer): float =
+  ## The speed the chrome highlights a chip against (`sp` on the wire). A
+  ## float, because half speed has no integer to report.
+  if player.halfSpeed: 0.5 else: player.playbackSpeed().float
 
 proc startFrame*(player: ReplayPlayer): int =
   ## The first game-start frame. Everything before it is the recorded pre-game
@@ -247,6 +262,9 @@ proc applyCommand*(
   of 'e': player.seekTo(sim, player.maxFrame)
   of 'r': player.looping = not player.looping
   of 'f': player.skipLulls = not player.skipLulls
+  # The speed chars are VALUES, not indices: '5' is the half-speed chip (the
+  # 5 of 0.5), the rest are the multipliers themselves.
+  of '5': player.speedIndex = ReplayHalfSpeedIndex
   of '1': player.speedIndex = 0
   of '2': player.speedIndex = 1
   of '4': player.speedIndex = 2
@@ -272,7 +290,10 @@ proc advanceReplayFrame*(
     if player.looping:
       player.seekTo(sim, 0)
     return
-  player.accumulator += player.playbackSpeed() * TicksPerSecondBase
+  let framePace =
+    if player.halfSpeed: TicksPerSecondBase div 2
+    else: player.playbackSpeed() * TicksPerSecondBase
+  player.accumulator += framePace
   var advanced = 0
   while player.accumulator >= TargetFps and advanced < 8:
     player.accumulator -= TargetFps

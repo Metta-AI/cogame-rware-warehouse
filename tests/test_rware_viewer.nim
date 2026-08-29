@@ -9,6 +9,7 @@
 import std/[algorithm, sequtils, strutils, unittest]
 import helpers
 import crunchy
+import rware/wire_constants
 
 const
   StarterChromeSha =
@@ -347,6 +348,42 @@ suite "rware viewer":
     let core = readRepoFile("client/broadcast_core.js")
     check "fillText('W' + (g + 1)" in core
     check "fillText(r.id," in core
+
+  test "the chip row is the ENGINE's speeds, half speed first":
+    ## chrome_common.js is ctf's file byte for byte (test 30 above), and it
+    ## reads window.CTF_WIRE. This game emits the identical block under its own
+    ## name, so the fork's page IIFE is where the two are joined -- BEFORE it
+    ## instantiates the chrome, or SPEEDS falls back to ctf's
+    ## [1,2,3,4,8,16] and the row grows a 3x and a 16x this engine has no
+    ## command for while losing the half-speed chip entirely.
+    check "window.CTF_WIRE = window.RWARE_WIRE" in pageScript()
+    check pageScript().find("window.CTF_WIRE = window.RWARE_WIRE") <
+      pageScript().find("window.ChromeCommon(")
+    check "speeds:[0.5,1,2,4,8]" in WireConstantsJs
+    ## the chrome's own speed->command map is ctf's whole-number one, so the
+    ## 0.5x chip is wired here, to replay_runtime's half-speed char
+    check "button[aria-label=\"0.5x speed\"]" in pageScript()
+    check "send('5')" in pageScript()
+    let runtime = stripNimComments(readRepoFile("src/rware/replay_runtime.nim"))
+    check "of '5': player.speedIndex = ReplayHalfSpeedIndex" in runtime
+    ## and the shipped page carries all of it: the bundle serves THIS file
+    check "window.CTF_WIRE = window.RWARE_WIRE" in page()
+    check "button[aria-label=\"0.5x speed\"]" in page()
+
+  test "Space pauses on the one shipped page":
+    ## Dockerfile.replay-viewer builds exactly one page (dist/index.html, sed'd
+    ## from client/replay_broadcast.html), so there is no iframe shell to
+    ## forward the key down to -- but the binding it does have is load-bearing
+    ## and is pinned here rather than left to a browser smoke.
+    for text in [pageScript(), page()]:
+      check "if (k === ' ') { ev.preventDefault(); togglePlay(); }" in text
+      check "function togglePlay() { send(' '); }" in text
+    let dockerfile = readRepoFile("Dockerfile.replay-viewer")
+    check "client/replay_broadcast.html > replay-viewer/dist/index.html" in
+      dockerfile
+    ## ' ' is the engine's play/pause command
+    check "of ' ': player.playing = not player.playing" in
+      stripNimComments(readRepoFile("src/rware/replay_runtime.nim"))
 
   test "playback outlasts the viewer soak":
     ## ecos 2026-08-23: a replay shorter than the soak window legitimately ends

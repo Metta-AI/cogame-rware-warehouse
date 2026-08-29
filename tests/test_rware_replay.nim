@@ -288,6 +288,49 @@ suite "rware replay":
     check lead["teams"].len == 2
     check lead["pts"].len > 0
 
+  test "half speed advances one tick every OTHER presentation frame":
+    ## 0.5x is a sentinel speedIndex, not a PlaybackSpeeds entry, so what is
+    ## under test is the accumulator arithmetic it rides on: two frames at half
+    ## speed move the replay exactly as far as one at 1x, and the opening speed
+    ## is still 1x (the viewer soak depends on that -- see
+    ## tests/test_rware_viewer.nim, "playback outlasts the viewer soak").
+    let (_, bytes) = recordEpisode()
+    var runtime = rederive(bytes)
+    check runtime.player.replayDisplaySpeed() == 1.0
+    check not runtime.player.halfSpeed
+    runtime.player.applyCommand(runtime.sim, "5")
+    check runtime.player.speedIndex == ReplayHalfSpeedIndex
+    check runtime.player.halfSpeed
+    check runtime.player.replayDisplaySpeed() == 0.5
+    let paused = runtime.player.frame
+    runtime.player.advanceReplayFrame(runtime.sim)
+    check runtime.player.frame == paused
+    runtime.player.advanceReplayFrame(runtime.sim)
+    check runtime.player.frame == paused + 1
+    ## and every whole-number chip still steps its own multiplier per frame
+    for (command, speed) in [("1", 1), ("2", 2), ("4", 4), ("8", 8)]:
+      runtime.player.applyCommand(runtime.sim, command)
+      check runtime.player.replayDisplaySpeed() == speed.float
+      let before = runtime.player.frame
+      runtime.player.advanceReplayFrame(runtime.sim)
+      check runtime.player.frame == before + speed
+
+  test "Space pauses and unpauses playback":
+    ## The one command every shipped page binds to the space bar. Paused means
+    ## paused: a presentation frame moves nothing until it is sent again.
+    let (_, bytes) = recordEpisode()
+    var runtime = rederive(bytes)
+    check runtime.player.playing
+    runtime.player.applyCommand(runtime.sim, " ")
+    check not runtime.player.playing
+    let held = runtime.player.frame
+    runtime.player.advanceReplayFrame(runtime.sim)
+    check runtime.player.frame == held
+    runtime.player.applyCommand(runtime.sim, " ")
+    check runtime.player.playing
+    runtime.player.advanceReplayFrame(runtime.sim)
+    check runtime.player.frame == held + 1
+
   test "seeking re-derives the same state":
     let (_, bytes) = recordEpisode(maxTicks = 120)
     var runtime = rederive(bytes)

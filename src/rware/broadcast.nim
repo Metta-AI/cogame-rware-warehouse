@@ -212,7 +212,7 @@ proc buildStateJson*(
     "lp": player.looping,
     "sk": player.skipLulls,
     "ff": player.fastForward,
-    "sp": player.playbackSpeed(),
+    "sp": player.replayDisplaySpeed(),
     "en": true,
     "pov": -1,
     "teams": teamsJson(sim),
