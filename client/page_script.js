@@ -10,6 +10,13 @@
     console.error('replay_broadcast: chrome_common.js missing - this page must be served spliced (native server or dist bundle), not opened raw.');
     return;
   }
+  // The inherited chrome reads its engine constants from window.CTF_WIRE, and
+  // chrome_common.js is coworld-ctf's file BYTE FOR BYTE (pinned by
+  // tests/test_rware_viewer.nim), so the two names are joined here, in this
+  // game's own fork of the page IIFE, before the chrome is instantiated.
+  // Without it the chrome falls back to ctf's [1,2,3,4,8,16] chip row: a 3x
+  // and a 16x this engine has no command for, and no half-speed chip at all.
+  window.CTF_WIRE = window.RWARE_WIRE;
   var C = window.ChromeCommon({
     send: function (cmd) { send(cmd); },
     sendPov: function () {},
@@ -491,6 +498,13 @@
   function togglePlay() { send(' '); }
   // (speed chips + their speed->command map live in the shared chrome)
   $('btn-play').addEventListener('click', togglePlay);
+  // ...except the HALF-SPEED chip. The chrome builds a chip for every entry of
+  // WIRE.speeds, but its speed->command map is ctf's whole-number one, so the
+  // 0.5x chip it builds for this engine has no command of its own. Give it
+  // one here: '5' is replay_runtime's half-speed char, and it is the same char
+  // the keyboard's digit branch already forwards.
+  $('speedchips').querySelector('button[aria-label="0.5x speed"]')
+    .addEventListener('click', function () { send('5'); });
   $('btn-restart').addEventListener('click', function () { send(','); });
   $('btn-back').addEventListener('click', function () { send('b'); });
   $('btn-fwd').addEventListener('click', function () { send('.'); });
