@@ -36,18 +36,27 @@ a slow viewer can never stall the episode.
 
 ## The seat
 
-`/bin/rware-warehouse-player` is deliberately thin. It dials its seat with bounded
-retries, sends ONE Sprite v1 chat message carrying its registration, and then only
-receives:
+`/bin/rware-warehouse-player` dials its seat with bounded retries and sends a
+Sprite v1 registration chat message:
 
 ```json
 {"policy": "<label>", "prompt": "<PLAYER_PROMPT or empty>",
- "scripted": "shuttle" | "courteous" | null}
+ "scripted": "shuttle" | "courteous" | null,
+ "mode": "external" | null}
 ```
 
-`prompt` is rune-truncated at 4000 runes and `policy` at 64. Every decision is
-made **inside the game server**, because that is the only container the platform
-injects the `anthropic_api_key` coworld secret into.
+`prompt` is rune-truncated at 4000 runes and `policy` at 64. Scripted and
+prompt decisions remain inside the game server. Numeric and Jev players register
+as `external`; the server sends each a fogged observation in a `TextMessage`:
+
+```json
+{"type":"decision","turn":7,"seat":2,"deadline_ms":14000,
+ "observation":{"you":"Charlie"}}
+```
+
+The player replies with a Sprite chat carrying `orders:7:<order JSON>`. The
+server validates and applies the order, or records a fallback if the response
+is missing or invalid. The server owns all results and replay records.
 
 Two details are scar tissue, not style:
 
@@ -58,11 +67,9 @@ Two details are scar tissue, not style:
   close frame and mummy's `send` only queues, so the game's own `quit(0)` can
   outrun the flushed frame. Exiting 1 there fails certification intermittently.
 
-A seat's chat is its **registration** and nothing else: it is consumed by the
-server, never applied as a shout and never written to the replay chat stream (the
-prompt is a secret). What the replay gets is a redacted `register` record with the
-policy label and kind only. Any other chat text from a seat is dropped —
-drivers speak through `say`, seats do not shout.
+A seat's registration chat and external order chat are consumed by the server,
+never applied as shouts. The replay gets a redacted `register` record with the
+policy label and kind, plus the accepted order. Drivers speak through `say`.
 
 ## The observation
 
@@ -75,6 +82,7 @@ into the replay's `directive` record so the replay explains every decision.
   "fleet": ["Alpha", "Bravo", "Charlie", "Delta"],
   "turn": 7, "of": 25, "tick": 120, "turn_ticks": 20, "ticks_left": 380,
   "warehouse": {"width": 10, "height": 11,
+                "floor_plan": "...",
                 "stations": {"W1": [4, 10], "W2": [5, 10]},
                 "storage_slots": 32, "sensor_range": 3},
   "requests": [{"shelf": "S07", "home": [1, 3]},
@@ -101,10 +109,8 @@ into the replay's `directive` record so the replay explains every decision.
 ```
 
 **Visible.** The whole floor plan as an ASCII map (`#` storage slot, `.` aisle,
-`W` workstation, then referred to by coordinates) — static for the whole
-episode, and prepended to **every** request's user message rather than sent once
-at registration, because a provider call carries no conversation state of its
-own (`src/rware/llm.nim`, `floorPlanBlock`); the request board in full, with each
+`W` workstation, then referred to by coordinates) is in `floor_plan`. The
+prompt policy also receives it in its user message; the request board in full, with each
 shelf's home cell; everything about the seat's own robot; other robots and cell
 contents within Chebyshev `sensor_range = 3`; every seat's previous-turn `say` on
 the fleet radio; and the public fleet statistics.
@@ -140,6 +146,12 @@ decision statistics. Nothing about any seat's identity ever reaches a prompt.
 | whole reply | <= 4096 bytes read from the provider before parsing |
 | `PLAYER_PROMPT` | <= 4000 runes at registration |
 
+Numeric policies receive 619 values and a legality mask over 16 game-owned
+orders through `POST /actions`. They return `{"actions":[index]}`. Jev gets the
+same choices through System One. Both map the selected index to a JSON order in
+the player process. `src/rware/policy_actions.nim` defines the catalog;
+`src/rware/numeric_bridge.nim` exposes it through JSONL training episodes.
+
 `yield` is spelled `yield` on the wire and `okYield` in the Nim enum, because
 `yield` is a Nim keyword.
 
@@ -164,6 +176,9 @@ seat, the attempt and a `cause` from exactly this set:
 | `no_credentials` | no API key (or the provider rejected it), so the LLM leg is off |
 | `budget_guard` | two more turns would not fit the wall-clock budget; the rest of the episode plays scripted |
 | `disconnected` | the seat never joined, so nobody is issuing orders for that robot |
+
+External players use `timeout` for a missing response and `parse_error` for an
+invalid response. Their calls do not consume the game-side LLM rate budget.
 
 The set is **closed** — `src/rware/decide.nim`'s `FallbackCauses`, which is the
 design note's enum exactly, and `tests/test_rware_engine.nim` asserts no other
@@ -209,6 +224,10 @@ Closed schema; `game.results_schema` in the manifest lists exactly these keys an
   "stopDetail":     ""
 }
 ```
+
+`policyKinds` also accepts `external`. `llmTurns` counts accepted model orders,
+including external numeric and Jev orders. `crossPlay` is true when model and
+scripted seats share the episode.
 
 `winner` is always `null`: a cooperative episode has no winner. `win[s]` is
 `teamDelivered >= parDeliveries`, the same boolean for all four seats. `reason`

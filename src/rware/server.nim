@@ -114,6 +114,10 @@ type
     seats: Table[WebSocket, SeatSocket]
     globals: Table[WebSocket, bool]
     registrations: Table[WebSocket, string]
+    pending: array[SeatCount, string]
+    responses: array[SeatCount, string]
+    responseAt: array[SeatCount, MonoTime]
+    deadlines: array[SeatCount, MonoTime]
     closed: seq[WebSocket]
     config: GameConfig
     replayBytes: string
@@ -154,13 +158,13 @@ proc respondText(request: Request, status: int, body: string) =
 
 proc parseRegistration(
   text: string
-): tuple[ok: bool, prompt, scripted, policy: string] =
+): tuple[ok: bool, prompt, scripted, policy: string, external: bool] =
   ## A seat's Sprite v1 chat message, read as its registration:
   ##   {"policy":"…","prompt":"…","scripted":"shuttle"|"courteous"|null}
   ## Anything that is not that object is not a registration, and any other
   ## chat text from a seat is dropped: drivers speak through `say`, seats
   ## do not shout.
-  result = (false, "", "", "")
+  result = (false, "", "", "", false)
   if text.len == 0 or text[0] != '{':
     return
   var node: JsonNode
@@ -178,6 +182,7 @@ proc parseRegistration(
   if not node{"scripted"}.isNil and node{"scripted"}.kind == JString:
     result.scripted = node{"scripted"}.getStr()
   result.policy = node{"policy"}.getStr()
+  result.external = node{"mode"}.getStr() == "external"
 
 proc httpHandler(request: Request) {.gcsafe.} =
   if request.path == HealthPath and request.httpMethod == "GET":
@@ -298,7 +303,13 @@ proc websocketHandler(
             of SpriteClientReadyMessage:
               appState.seats[websocket].ready = true
             of SpriteClientChatMessage:
-              if item.text.len > 0 and item.text[0] == '{':
+              let slot = appState.seats[websocket].slot
+              if appState.pending[slot].len > 0 and
+                  item.text.startsWith("orders:" & appState.pending[slot] & ":"):
+                appState.responses[slot] = item.text[
+                  ("orders:" & appState.pending[slot] & ":").len .. ^1]
+                appState.responseAt[slot] = getMonoTime()
+              elif item.text.len > 0 and item.text[0] == '{':
                 appState.registrations[websocket] = item.text
             else:
               discard
@@ -334,6 +345,44 @@ proc playerFrameBlob(frame: int): string =
   for i in 0 ..< 4:
     result[i + 1] = char((frame shr (i * 8)) and 0xff)
 
+proc dispatchExternal(turn, deadlineMs: int,
+                      requests: seq[ExternalRequest]) =
+  var sends: seq[tuple[ws: WebSocket, body: string]]
+  let deadline = getMonoTime() + initDuration(milliseconds = deadlineMs)
+  {.gcsafe.}:
+    withLock appState.lock:
+      for request in requests:
+        let seat = request.seat
+        appState.pending[seat] = $turn
+        appState.responses[seat] = ""
+        appState.deadlines[seat] = deadline
+        for websocket, player in appState.seats.pairs:
+          if player.slot == seat:
+            sends.add((ws: websocket, body: $(%*{
+              "type": "decision", "turn": turn, "seat": seat,
+              "deadline_ms": deadlineMs, "observation": request.view})))
+  for send in sends:
+    send.ws.send(send.body, TextMessage)
+
+proc collectExternal(turn, deadlineMs: int,
+                     requests: seq[ExternalRequest]): seq[string] =
+  discard turn
+  discard deadlineMs
+  result = newSeq[string](requests.len)
+  while true:
+    var waiting = false
+    {.gcsafe.}:
+      withLock appState.lock:
+        for position, request in requests:
+          let seat = request.seat
+          if appState.responses[seat].len > 0 and
+              appState.responseAt[seat] <= appState.deadlines[seat]:
+            result[position] = appState.responses[seat]
+          elif getMonoTime() < appState.deadlines[seat]:
+            waiting = true
+    if not waiting: break
+    sleep(10)
+
 proc runServerLoop*(
   host = "0.0.0.0",
   port = 8080,
@@ -368,6 +417,8 @@ proc runServerLoop*(
     tracker = initBroadcastTracker()
   if replayMode:
     sim.applyJoinRecords(replayData)
+  engine.externalDispatch = dispatchExternal
+  engine.externalCollect = collectExternal
 
   let eventsPath = block:
     let uri = getEnv("COGAME_EVENTS_URI")
@@ -451,10 +502,13 @@ proc runServerLoop*(
       engine.seats[slot].registered = true
       engine.seats[slot].prompt =
         registration.prompt.truncateRunes(MaxPromptRunes)
-      engine.seats[slot].isLlm = engine.seats[slot].prompt.len > 0
+      engine.seats[slot].isExternal = registration.external
+      engine.seats[slot].isLlm =
+        engine.seats[slot].prompt.len > 0 and not registration.external
       engine.seats[slot].baseline = parseBaseline(registration.scripted)
       engine.seats[slot].label =
         if registration.policy.len > 0: registration.policy
+        elif registration.external: "external"
         elif engine.seats[slot].isLlm: "prompt"
         else: $engine.seats[slot].baseline
       sim.seatPolicyKind[slot] = engine.policyKind(slot)

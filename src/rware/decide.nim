@@ -16,7 +16,7 @@
 
 import std/[json, monotimes, os, strutils, times]
 import curly
-import sim, baselines, llm
+import sim, baselines, llm, directives
 
 const
   FallbackCauses* = ["timeout", "parse_error", "transport_error",
@@ -43,10 +43,17 @@ type
     ## What one seat registered as. A seat that registers with neither field --
     ## or never registers at all -- is `courteous`.
     isLlm*: bool
+    isExternal*: bool
     prompt*: string
     baseline*: Baseline
     label*: string
     registered*: bool
+
+  ExternalRequest* = tuple[seat: int, view: JsonNode]
+  ExternalDispatch* = proc(turn, deadlineMs: int,
+    requests: seq[ExternalRequest]) {.closure.}
+  ExternalCollect* = proc(turn, deadlineMs: int,
+    requests: seq[ExternalRequest]): seq[string] {.closure.}
 
   DecisionEngine* = object
     client*: LlmClient
@@ -58,12 +65,17 @@ type
     lastView*: array[SeatCount, JsonNode]
     requestTimes*: seq[MonoTime]
     baselineParams*: BaselineParams
+    externalDispatch*: ExternalDispatch
+    externalCollect*: ExternalCollect
+    preparedTurn*: bool
       ## The swept tunables (tools/tune_baselines.nim). Held on the engine so
       ## the sweep can drive a whole episode with one candidate set without
       ## touching the shipped defaults.
 
-proc initDecisionEngine*(config: GameConfig): DecisionEngine =
-  result.client = newLlmClient(config)
+proc initDecisionEngine*(config: GameConfig,
+                         enableLlm = true): DecisionEngine =
+  result.client = if enableLlm: newLlmClient(config)
+    else: LlmClient(disabled: true)
   result.baselineParams = DefaultBaselineParams
   for seat in 0 ..< SeatCount:
     result.seats[seat].baseline = DefaultBaseline
@@ -71,7 +83,8 @@ proc initDecisionEngine*(config: GameConfig): DecisionEngine =
     result.lastView[seat] = newJNull()
 
 proc policyKind*(engine: DecisionEngine, seat: int): string =
-  if seat >= 0 and seat < SeatCount and engine.seats[seat].isLlm: "llm"
+  if seat >= 0 and seat < SeatCount and engine.seats[seat].isExternal: "external"
+  elif seat >= 0 and seat < SeatCount and engine.seats[seat].isLlm: "llm"
   else: "scripted"
 
 # ---------------------------------------------------------------------------
@@ -149,6 +162,7 @@ proc seatView*(
     "warehouse": {
       "width": wh.width,
       "height": wh.height,
+      "floor_plan": wh.asciiMap(),
       "stations": {
         "W1": [wh.cellX(wh.goals[0]), wh.cellY(wh.goals[0])],
         "W2": [wh.cellX(wh.goals[1]), wh.cellY(wh.goals[1])]
@@ -282,7 +296,9 @@ proc turn*(
     ## skipped the retry the note promises (design.md:164-165), which is the
     ## one thing the budget exists to protect.
   sim.turnIndex = turnIndex
-  sim.refreshSeatMemory()
+  if not engine.preparedTurn:
+    sim.refreshSeatMemory()
+  engine.preparedTurn = false
   engine.client.throttled = false
 
   # --- budget guard: settle EARLY rather than overrun -----------------------
@@ -297,10 +313,14 @@ proc turn*(
 
   # --- which seats need a call? --------------------------------------------
   var open: seq[int]
+  var external: seq[ExternalRequest]
   var rateBudget = engine.rateRoom()
   for seat in 0 ..< sim.seats():
     engine.lastView[seat] = engine.seatView(sim, seat, includeNotes = false)
-    if engine.seats[seat].isLlm and not engine.llmOff and
+    if engine.seats[seat].isExternal:
+      external.add((seat: seat,
+        view: engine.seatView(sim, seat, includeNotes = true)))
+    elif engine.seats[seat].isLlm and not engine.llmOff and
         not engine.client.disabled and rateBudget > 0:
       open.add(seat)
       dec rateBudget
@@ -346,6 +366,9 @@ proc turn*(
     ## -- the note's own arithmetic (design.md:361: 25 turns x max(12, 14) =
     ## 350 s), still inside the 660 s engine stop and the 720 s target.
     turnStart = engine.lastBatchStart
+
+  if external.len > 0:
+    engine.externalDispatch(turnIndex, sim.config.turnBudgetMs, external)
 
   # --- up to two PARALLEL batches ------------------------------------------
   var attempt = 0
@@ -450,6 +473,31 @@ proc turn*(
     ## "falling back" is the phrase phase 60 greps the GAME log for.
     echo "rware llm: seat ", seat, " falling back to courteous (", cause,
       ") on turn ", turnIndex
+
+  if external.len > 0:
+    let replies = engine.externalCollect(
+      turnIndex, sim.config.turnBudgetMs, external)
+    doAssert replies.len == external.len
+    for position, request in external:
+      let seat = request.seat
+      let reply = replies[position]
+      let payload = if reply.len > 0 and reply.len <= MaxReplyBytes:
+        extractJsonObject(reply, strict = false) else: nil
+      if not payload.isNil and payload.kind == JObject:
+        var directive = parseRobotDirective(
+          payload, sim.directives[seat], sim.world.wh,
+          sim.world.requestQueue)
+        directive.source = dsExternal
+        engine.notes[seat] = directive.notes
+        sim.ordersRejected[seat] += directive.rejected
+        sim.applyOrders(seat, directive)
+      else:
+        var directive = fallbackDirective(sim, seat, engine.baselineParams)
+        directive.say = ""
+        sim.applyOrders(seat, directive)
+        result.add(fallbackRecord(turnIndex, seat, 1,
+          if reply.len == 0: "timeout" else: "parse_error",
+          "external player did not return a bounded order"))
 
   # --- the fleet radio: every seat hears every seat's last-turn `say` -------
   var nextRadio: seq[tuple[slot: int, text: string]]

@@ -1,9 +1,5 @@
-# Build Docker. ONE image, TWO entrypoints: /bin/rware-warehouse (the game
-# server, which also makes every LLM call -- the anthropic_api_key coworld
-# secret is injected into the GAME pod) and /bin/rware-warehouse-player (the thin
-# seat registrar). The whole policy set is env-switched inside this same image
-# (PLAYER_PROMPT vs PLAYER_SCRIPTED), which is what keeps a champion and a
-# scripted filler byte-identical apart from their environment.
+# Build Docker. The game owns the simulator and the player process owns numeric
+# and Jev policy calls. The legacy prompt policy uses the game-side LLM client.
 FROM debian:bookworm-slim AS build
 
 RUN apt-get update && \
@@ -47,7 +43,12 @@ RUN nim c \
   $NimFlags \
   --nimcache:/tmp/rware-warehouse-player-nimcache \
   --out:rware-warehouse-player \
-  src/rware_warehouse_player.nim
+  src/rware_warehouse_player.nim && \
+  nim c \
+  $NimFlags \
+  --nimcache:/tmp/rware-warehouse-bridge-nimcache \
+  --out:rware-warehouse-bridge \
+  src/rware/numeric_bridge.nim
 
 # Run Docker.
 FROM debian:bookworm-slim
@@ -60,6 +61,8 @@ WORKDIR /workspace/rware-warehouse
 COPY --from=build /workspace/rware-warehouse/rware-warehouse /bin/rware-warehouse
 COPY --from=build /workspace/rware-warehouse/rware-warehouse-player \
   /bin/rware-warehouse-player
+COPY --from=build /workspace/rware-warehouse/rware-warehouse-bridge \
+  /bin/rware-warehouse-bridge
 COPY --from=build /workspace/rware-warehouse/*.json ./
 COPY --from=build /workspace/rware-warehouse/data ./data
 COPY --from=build /workspace/rware-warehouse/client ./client

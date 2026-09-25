@@ -93,7 +93,7 @@ proc runTurnIfDue*(
   for seat in 0 ..< SeatCount:
     let directive = sim.directives[seat]
     case directive.source
-    of dsLlm: inc sim.llmTurns[seat]
+    of dsLlm, dsExternal: inc sim.llmTurns[seat]
     of dsFallback:
       inc sim.fallbackTurns[seat]
       sim.emitEvent(Fallback, source = seat, amount = turnIndex)
