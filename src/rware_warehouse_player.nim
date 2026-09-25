@@ -1,26 +1,23 @@
-## The rware-warehouse player container: a policy is just a prompt.
-##
-## This process is DELIBERATELY thin. It connects to its seat, sends ONE
-## Sprite v1 chat message carrying its registration, and then only receives.
-## Every decision happens inside the GAME server, because that is the only
-## container the platform injects the `anthropic_api_key` coworld secret into,
-## and because keeping the control layer server-side is what makes the recorded
-## order log reproducible with no network in the loop.
+## The rware-warehouse player container runs numeric and Jev policies over the
+## ordinary seat socket. Prompt policies still use the game-side LLM client.
 ##
 ##   PLAYER_PROMPT        a strategy in plain English -> this seat is an LLM seat
 ##   PLAYER_SCRIPTED      shuttle | courteous                -> this seat is scripted
+##   PLAYER_NUMERIC_URL   an /actions endpoint                -> numeric seat
+##   PLAYER_JEV=1         System One candidate selection      -> Jev seat
 ##   PLAYER_POLICY_LABEL  a free label for the replay's `register` record
 ##
-## A seat that sets neither is `courteous`. To field your own policy, reuse this
-## image and set PLAYER_PROMPT:
+## A seat that sets neither is `courteous`. To field a numeric policy, reuse
+## this image and set PLAYER_NUMERIC_URL on the player:
 ##
 ##   coworld upload-policy <rware-warehouse-image> --name my-rware \
-##     --run /bin/rware-warehouse-player --secret-env PLAYER_PROMPT="<strategy>"
+##     --run /bin/rware-warehouse-player --env PLAYER_NUMERIC_URL="<endpoint>"
 
-import std/[json, options, os, strutils]
+import std/[json, options, os, random, strutils, times]
 import bitworld/spriteprotocol
 import whisky
 import rware/sim_types
+import rware/numeric_policy, rware/jev_policy
 
 const
   ConnectAttempts = 240      ## 240 x 500 ms = 2 minutes of dialling.
@@ -34,7 +31,8 @@ const
 ## re-declared here once, which meant 4000/64 existed twice and could drift
 ## (r1 review F15).
 
-proc registrationBlob(prompt, scripted, policy: string): string =
+proc registrationBlob(prompt, scripted, policy: string,
+                      external: bool): string =
   ## The one registration message. `scripted` is JSON null when the seat is an
   ## LLM seat, so the server can tell "no baseline named" from "courteous
   ## named explicitly".
@@ -46,7 +44,12 @@ proc registrationBlob(prompt, scripted, policy: string): string =
     node["scripted"] = %scripted
   else:
     node["scripted"] = newJNull()
+  if external:
+    node["mode"] = %"external"
   blobFromSpriteChat($node)
+
+proc orderBlob(request, order: JsonNode): string =
+  blobFromSpriteChat("orders:" & $request["turn"].getInt() & ":" & $order)
 
 proc readyBlob(): string =
   ## The Sprite v1 player-ready packet (0x85). Legitimate here in a way it is
@@ -64,16 +67,26 @@ when isMainModule:
   let
     prompt = getEnv("PLAYER_PROMPT").strip()
     scripted = getEnv("PLAYER_SCRIPTED").strip()
+    numeric = getEnv("PLAYER_NUMERIC_URL").strip().len > 0
+    jev = getEnv("PLAYER_JEV") == "1"
+    external = numeric or jev
     label = block:
       let explicit = getEnv("PLAYER_POLICY_LABEL").strip()
       if explicit.len > 0: explicit
+      elif jev: "jev"
+      elif numeric: "numeric"
       elif prompt.len > 0: "prompt"
       elif scripted.len > 0: scripted
       else: "courteous"
   echo "rware-warehouse player: kind=",
-    (if prompt.len > 0: "llm" else: "scripted"),
+    (if external: "external" elif prompt.len > 0: "llm" else: "scripted"),
     " baseline=", (if scripted.len > 0: scripted else: "courteous"),
     " label=", label
+  if external and (prompt.len > 0 or scripted.len > 0) or numeric and jev:
+    quit("Choose exactly one player policy mode", 1)
+  randomize()
+  let session = "rware:" & $getCurrentProcessId() & ":" &
+    $getTime().toUnix() & ":" & $rand(high(int))
 
   proc dial(attempts: int): WebSocket =
     ## Bounded dialling. The episode runner starts the players at the same
@@ -111,7 +124,8 @@ when isMainModule:
   while true:
     var sessionFrames = 0
     try:
-      socket.send(registrationBlob(prompt, scripted, label), BinaryMessage)
+      socket.send(registrationBlob(prompt, scripted, label, external),
+        BinaryMessage)
       var resends = 0
       while true:
         let received = socket.receiveMessage()
@@ -121,7 +135,14 @@ when isMainModule:
         if resends < RegistrationResends and
             sessionFrames mod ResendEveryFrames == 1:
           inc resends
-          socket.send(registrationBlob(prompt, scripted, label), BinaryMessage)
+          socket.send(registrationBlob(prompt, scripted, label, external),
+            BinaryMessage)
+        if external and received.get().kind == TextMessage:
+          let request = parseJson(received.get().data)
+          if request["type"].getStr() == "decision":
+            let order = if numeric: chooseNumericOrder(request, session)
+              else: chooseJevOrder(request)
+            socket.send(orderBlob(request, order), BinaryMessage)
         socket.send(readyBlob(), BinaryMessage)
     except CatchableError as error:
       echo "rware-warehouse player: socket closed (", error.msg, ")"

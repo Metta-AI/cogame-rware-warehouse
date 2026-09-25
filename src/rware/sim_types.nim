@@ -8,7 +8,9 @@
 import std/[strutils, unicode]
 
 const
-  GameVersion* = "1"
+  GameVersion* = "2"  ## player-owned external order policies and visible floor plan
+    ## GV2: ordinary player policies may send warehouse orders, and the
+    ##   seat view includes its public floor plan. Obsoletes GV1.
     ## GV1 (rware-warehouse v1): semitable/robotic-warehouse ported to a
     ##   10x11 / 16x11 integer grid, four robot seats, one cooperative game
     ##   of 500 ticks and 25 command turns. Obsoletes nothing.

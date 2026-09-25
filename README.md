@@ -14,11 +14,20 @@ stowed what it holds.
 **Nobody scores alone.** The number the league reads is the number of shelves the
 *fleet* delivered, and the only way to lose it is to jam the aisles.
 
-## A policy is just a prompt
+## Player policies
 
-A seat is an LLM if it sets `PLAYER_PROMPT`, and a scripted baseline if it sets
-`PLAYER_SCRIPTED=shuttle|courteous`. Both come out of the same image, and the
-game server — not the player container — makes every model call.
+A seat can use `PLAYER_NUMERIC_URL` for a numeric policy, `PLAYER_JEV=1` for
+Jev, `PLAYER_PROMPT` for the original prompt policy, or
+`PLAYER_SCRIPTED=shuttle|courteous` for a baseline. Numeric and Jev decisions
+run in the player container over its own seat observation. The game keeps the
+order grammar, fog of war, fallback, scoring, and replay.
+
+Numeric policies receive 619 values and a mask over 16 game-owned orders through
+`POST /actions`. Jev chooses from that same catalog through System One. Each
+returns an order over the ordinary `/player` socket. `PLAYER_NUMERIC_KEY` and
+`TYPESAFE_API_KEY` authenticate the respective policy calls when needed. The
+game source also includes a JSONL bridge at `src/rware/numeric_bridge.nim` for
+four-seat training episodes with the same observation and order catalog.
 
 Every 20 ticks each driver is handed its robot's view of the warehouse and
 answers with one JSON order:
@@ -84,7 +93,8 @@ jam, fallback and the end.
 | --- | --- |
 | `src/rware/` | the sim, the server, the decision layer and the replay codec |
 | `src/rware_warehouse.nim` | the game server entrypoint |
-| `src/rware_warehouse_player.nim` | the thin seat registrar |
+| `src/rware_warehouse_player.nim` | the player policy entrypoint |
+| `src/rware/numeric_bridge.nim` | the JSONL training bridge |
 | `replay-viewer/` | the wasm entry, the emscripten config and the static shell |
 | `client/` | the broadcast chrome and the board renderer |
 | `vendor/upstream/` | byte-pristine `rware/warehouse.py` and `rware/__init__.py` |

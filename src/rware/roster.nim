@@ -46,14 +46,14 @@ proc seatsJoined*(sim: SimServer): int =
       inc result
 
 proc crossPlay*(sim: SimServer): bool =
-  ## True when at least one LLM seat and at least one scripted seat sat
+  ## True when at least one model policy and one scripted seat sat
   ## together -- the idea's integrity note, recorded as a fact about the
   ## episode rather than asserted.
-  var llm, scripted = false
+  var model, scripted = false
   for seat in 0 ..< SeatCount:
-    if sim.seatPolicyKind[seat] == "llm": llm = true
+    if sim.seatPolicyKind[seat] in ["llm", "external"]: model = true
     else: scripted = true
-  llm and scripted
+  model and scripted
 
 proc fleetResultsJson*(sim: SimServer): string =
   ## The CLOSED results schema. Adding a key means updating this proc, the
@@ -172,7 +172,7 @@ proc applyReplayChat*(sim: var SimServer, text: string) =
     ## with the recorded ones in both directions.
     if slot >= 0 and slot < SeatCount:
       case node{"source"}.getStr()
-      of "llm": inc sim.llmTurns[slot]
+      of "llm", "external": inc sim.llmTurns[slot]
       of "fallback": inc sim.fallbackTurns[slot]
       else: discard
   of "result":

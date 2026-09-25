@@ -6,12 +6,53 @@
 
 import std/[json, monotimes, os, sets, strutils, times, unittest]
 import helpers
+import rware/policy_actions
 
 proc resultKeys(text: string): HashSet[string] =
   for key, _ in parseJson(text).pairs:
     result.incl(key)
 
 suite "rware engine":
+
+  test "external seats use the fogged view and game order parser":
+    var config = testConfig(maxTicks = 40)
+    var engine = initDecisionEngine(config, enableLlm = false)
+    engine.seats[0].isExternal = true
+    engine.seats[1].isExternal = true
+    var dispatches = 0
+    var collects = 0
+    engine.externalDispatch = proc(turn, deadlineMs: int,
+                                   requests: seq[ExternalRequest]) =
+      inc dispatches
+      check turn == dispatches
+      check deadlineMs == config.turnBudgetMs
+      check requests.len == 2
+      for request in requests:
+        check request.view["you"].getStr() == seatAlias(request.seat)
+        check request.view["warehouse"]["floor_plan"].getStr().len > 0
+        check request.view{"policy"}.isNil
+        check actionChoices(request.view).len == policy_actions.ActionCount
+    engine.externalCollect = proc(turn, deadlineMs: int,
+                                  requests: seq[ExternalRequest]): seq[string] =
+      discard turn
+      discard deadlineMs
+      inc collects
+      for request in requests:
+        result.add(if request.seat == 0: "{\"verb\":\"yield\"}"
+          else: "{\"verb\":\"hold\"}")
+    let run = runHeadlessEpisode(config, engine, "")
+    check run.state.finished
+    check dispatches == 2 and collects == 2
+    check run.sim.llmTurns[0] == 2 and run.sim.llmTurns[1] == 2
+    check run.sim.fallbackTurns[0] == 0
+    var externalRecords = 0
+    for record in parseReplayBytes(run.bytes).chats:
+      let node = parseJson(record.text)
+      if node{"k"}.getStr() == "directive" and
+          node{"source"}.getStr() == "external":
+        inc externalRecords
+    check externalRecords == 4
+
 
   test "episode writes artifacts":
     ## 21. A real four-seat episode against a temp-dir COGAME_* URI set:
