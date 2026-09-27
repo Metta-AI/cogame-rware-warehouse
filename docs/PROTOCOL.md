@@ -46,7 +46,7 @@ Sprite v1 registration chat message:
 ```
 
 `prompt` is rune-truncated at 4000 runes and `policy` at 64. Scripted and
-prompt decisions remain inside the game server. Numeric and Jev players register
+prompt decisions remain inside the game server. Numeric players register
 as `external`; the server sends each a fogged observation in a `TextMessage`:
 
 ```json
@@ -147,8 +147,7 @@ decision statistics. Nothing about any seat's identity ever reaches a prompt.
 | `PLAYER_PROMPT` | <= 4000 runes at registration |
 
 Numeric policies receive 619 values and a legality mask over 16 game-owned
-orders through `POST /actions`. They return `{"actions":[index]}`. Jev gets the
-same choices through System One. Both map the selected index to a JSON order in
+orders through `POST /actions`. They return `{"actions":[index]}` and map the selected index to a JSON order in
 the player process. `src/rware/policy_actions.nim` defines the catalog;
 `src/rware/numeric_bridge.nim` exposes it through JSONL training episodes.
 
@@ -226,7 +225,7 @@ Closed schema; `game.results_schema` in the manifest lists exactly these keys an
 ```
 
 `policyKinds` also accepts `external`. `llmTurns` counts accepted model orders,
-including external numeric and Jev orders. `crossPlay` is true when model and
+including external numeric orders. `crossPlay` is true when model and
 scripted seats share the episode.
 
 `winner` is always `null`: a cooperative episode has no winner. `win[s]` is

@@ -16,16 +16,15 @@ stowed what it holds.
 
 ## Player policies
 
-A seat can use `PLAYER_NUMERIC_URL` for a numeric policy, `PLAYER_JEV=1` for
-Jev, `PLAYER_PROMPT` for the original prompt policy, or
-`PLAYER_SCRIPTED=shuttle|courteous` for a baseline. Numeric and Jev decisions
+A seat can use `PLAYER_NUMERIC_URL` for a numeric policy,
+`PLAYER_PROMPT` for the original prompt policy, or
+`PLAYER_SCRIPTED=shuttle|courteous` for a baseline. Numeric decisions
 run in the player container over its own seat observation. The game keeps the
 order grammar, fog of war, fallback, scoring, and replay.
 
 Numeric policies receive 619 values and a mask over 16 game-owned orders through
-`POST /actions`. Jev chooses from that same catalog through System One. Each
-returns an order over the ordinary `/player` socket. `PLAYER_NUMERIC_KEY` and
-`TYPESAFE_API_KEY` authenticate the respective policy calls when needed. The
+`POST /actions` and return an order over the ordinary `/player` socket.
+`PLAYER_NUMERIC_KEY` authenticates the policy calls when needed. The
 game source also includes a JSONL bridge at `src/rware/numeric_bridge.nim` for
 four-seat training episodes with the same observation and order catalog.
 
