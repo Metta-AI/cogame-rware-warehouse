@@ -1,5 +1,5 @@
 # Build Docker. The game owns the simulator and the player process owns numeric
-# and Jev policy calls. The legacy prompt policy uses the game-side LLM client.
+# policy calls. The legacy prompt policy uses the game-side LLM client.
 FROM debian:bookworm-slim AS build
 
 RUN apt-get update && \
