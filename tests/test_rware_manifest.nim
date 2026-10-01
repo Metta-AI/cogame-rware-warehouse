@@ -104,8 +104,8 @@ suite "rware manifest":
     check manifest{"replay_viewer"}.isNil           ## under `game`, not top
     check game["runnable"]["type"].getStr() == "game"
     check game["runnable"]["run"].to(seq[string]) == @["/bin/rware-warehouse"]
-    check game["runnable"]["env"]["ANTHROPIC_API_KEY_URI"].getStr() ==
-      "secret://coworld/" & GameName & "/anthropic_api_key"
+    doAssert game{"runnable"}{"env"}{"ANTHROPIC_API_KEY_URI"}.isNil,
+      "hosted LLM uses the platform sidecar without provider secrets"
 
   test "protocols and docs are objects, not bare strings":
     ## garble v0.1.0: the platform validator rejects bare strings, and repo CI

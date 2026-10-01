@@ -411,7 +411,7 @@ proc turn*(
       var view = engine.seatView(sim, seat, includeNotes = true)
       let request = engine.client.requestFor(
         SystemPrompt,
-        engine.seatUserMessage(sim, seat, $view, retry = attempt > 0))
+        engine.seatUserMessage(sim, seat, $view, retry = attempt > 0), seat)
       batch.post(request.url, request.headers, request.body, $seat)
       engine.requestTimes.add(getMonoTime())
     let started = getMonoTime()
