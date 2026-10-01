@@ -21,9 +21,7 @@
       "run": [
         "/bin/rware-warehouse"
       ],
-      "env": {
-        "ANTHROPIC_API_KEY_URI": "secret://coworld/rware-warehouse/anthropic_api_key"
-      }
+      "env": {}
     },
     "protocols": {
       "player": {
