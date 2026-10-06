@@ -120,7 +120,7 @@ proc scriptedEngine*(
   config: GameConfig, baselines: openArray[Baseline] = [
     blCourteous, blShuttle, blCourteous, blShuttle]
 ): DecisionEngine =
-  result = initDecisionEngine(config)
+  result = initDecisionEngine(config, enableLlm = false)
   for seat in 0 ..< SeatCount:
     let baseline =
       if seat < baselines.len: baselines[seat] else: DefaultBaseline
