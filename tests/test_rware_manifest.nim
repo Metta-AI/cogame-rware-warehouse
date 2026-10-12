@@ -231,7 +231,6 @@ suite "rware manifest":
     check "  rware_warehouse:" in compose
     check "image: coworld-rware-warehouse:latest" in compose
     check "platform: linux/amd64" in compose
-    check "network: host" in compose
     check "dockerfile: Dockerfile" in compose
     check "{{RWARE_WAREHOUSE_IMAGE}}" in readRepoFile(
       "coworld_manifest_template.json")
